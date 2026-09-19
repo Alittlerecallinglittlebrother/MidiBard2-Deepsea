@@ -12,7 +12,7 @@
     ],
     "AcceptsFeedback": "False",
     "IconUrl": "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/icon.png",
-    "Changelog": "3.2.5.18：自动点歌窗口顶部新增开源来源与完全免费说明，窄窗口自动换行；更新插件介绍为自动点歌、歌单、控制台与不同IP连接。保留 SevenCat 署名，演奏逻辑沿用 3.2.5.17，不含实验性演奏中换乐器功能。",
+    "Changelog": "3.2.5.19：删除自动点歌窗口顶部说明末尾的句号，避免句号单独换行；其余说明、布局和功能保持不变，不含实验性演奏中换乐器功能。",
     "ImageUrls": [
         "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/docs/images/queue.png",
         "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/docs/images/viewer.png"

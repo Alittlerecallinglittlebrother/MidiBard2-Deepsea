@@ -10,7 +10,7 @@ namespace BardStage.Windows;
 
 public sealed partial class MainWindow : Window, IDisposable
 {
-    private const string PluginNotice = "本插件基于midibard2开源代码魔改制作，完全免费，旨在打造一个更低门槛、更有活力的游戏演奏环境。";
+    private const string PluginNotice = "本插件基于midibard2开源代码魔改制作，完全免费，旨在打造一个更低门槛、更有活力的游戏演奏环境";
     private readonly StageController controller;
     private readonly FileDialogManager dialogs = new();
     private string search = "";

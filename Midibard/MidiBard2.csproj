@@ -4,7 +4,7 @@
         <AssemblySearchPaths>$(AssemblySearchPaths);$(DalamudLibPath)</AssemblySearchPaths>
         <TargetFramework>net10.0-windows7.0</TargetFramework>
         <LangVersion>latest</LangVersion>
-        <AssemblyVersion>3.2.5.17</AssemblyVersion>
+        <AssemblyVersion>3.2.5.18</AssemblyVersion>
         <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
         <Nullable>disable</Nullable>

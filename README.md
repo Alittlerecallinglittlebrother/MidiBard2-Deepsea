@@ -2,11 +2,13 @@
 
 FF14 / 卫月（Dalamud CN）演奏插件，基于 [reckhou/MidiBard2](https://github.com/reckhou/MidiBard2) 的 `v3-api15-stable` 分支开发。本仓库维护深海回响定制版源码、安装索引及版本发布。
 
-当前版本 **3.2.5.17**，Dalamud API 15，Windows x64 / .NET 10。作者署名：akira0245, Ori, Kalle, Zune, 断水剑, SevenCat。
+当前版本 **3.2.5.18**，Dalamud API 15，Windows x64 / .NET 10。作者署名：akira0245, Ori, Kalle, Zune, 断水剑, SevenCat。
 
-2026-09-19：发布 **3.2.5.17**，演奏逻辑恢复至 3.2.5.15，移除 3.2.5.16 新增的演奏中换乐器功能，并在断水剑后新增 SevenCat 署名。自动点歌、自动分配、主持人协作、队长接管和联系作者功能保留。
+基于midibard2的魔改版本，添加自动点歌、歌单、控制台、不同IP连接功能。
 
-已安装 3.2.5.16 或更早版本的用户，刷新卫月插件仓库后可直接更新至 **3.2.5.17**。开发插件用户请停用旧版，完整解压 [3.2.5.17 安装包](https://github.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/releases/download/v3.2.5.17/MidiBard2.zip)，重新指定其中的 `MidiBard2.dll`。不要同时启用多个版本。
+本插件基于midibard2开源代码魔改制作，完全免费，旨在打造一个更低门槛、更有活力的游戏演奏环境。
+
+已安装旧版的用户，刷新卫月插件仓库后可直接更新至 **3.2.5.18**。开发插件用户请停用旧版，完整解压 [3.2.5.18 安装包](https://github.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/releases/download/v3.2.5.18/MidiBard2.zip)，重新指定其中的 `MidiBard2.dll`。不要同时启用多个版本。
 
 ## 安装
 
@@ -33,11 +35,11 @@ https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepse
 
 ![自动点歌与联系作者入口](docs/images/queue.png)
 
-## 3.2.5.17 更新
+## 3.2.5.18 更新
 
-移除演奏中换乐器的开关、时钟保持、静音续奏和小节恢复逻辑，恢复 3.2.5.15 的演奏行为。作者列表更新为 akira0245, Ori, Kalle, Zune, 断水剑, SevenCat。
+自动点歌窗口顶部增加开源来源与完全免费说明，宽度足够时显示在标签栏右侧，窄窗口或放大字体时在标签栏下方自动换行。更新安装器中的插件介绍，作者列表保留 SevenCat。
 
-249 项核心测试及本地 Release 构建通过。C# 源码与原始 3.2.5.15 一致；本次未在游戏内加载验证。详见 [验证记录](STAGE-VERIFICATION.md)。
+演奏逻辑沿用 3.2.5.17，不含实验性演奏中换乐器功能。本次界面检查使用独立原生 ImGui 宿主，未在游戏内加载验证。详见 [验证记录](STAGE-VERIFICATION.md)。
 
 ## 构建
 

@@ -10,6 +10,7 @@ namespace BardStage.Windows;
 
 public sealed partial class MainWindow : Window, IDisposable
 {
+    private const string PluginNotice = "本插件基于midibard2开源代码魔改制作，完全免费，旨在打造一个更低门槛、更有活力的游戏演奏环境。";
     private readonly StageController controller;
     private readonly FileDialogManager dialogs = new();
     private string search = "";
@@ -83,10 +84,21 @@ public sealed partial class MainWindow : Window, IDisposable
             }
         }
         ImGui.Separator();
+        var tabPosition = ImGui.GetCursorScreenPos();
+        var availableWidth = ImGui.GetContentRegionAvail().X;
+        var style = ImGui.GetStyle();
+        float TabWidth(string label) => ImGui.CalcTextSize(label).X + style.FramePadding.X * 2 + style.ItemInnerSpacing.X;
+        var tabsWidth = TabWidth(viewer ? "演出列表" : "点歌队列")
+            + (!viewer ? TabWidth("曲库") : 0)
+            + (controller.Room?.IsRemote != true ? TabWidth("更多") : 0)
+            + (controller.Room != null ? TabWidth("演出房间") : 0);
+        var noticeWidth = ImGui.CalcTextSize(PluginNotice).X;
+        var noticeInline = tabsWidth + style.ItemSpacing.X * 2 + noticeWidth <= availableWidth;
         if (ImGui.BeginTabBar("MainTabs"))
         {
             if (ImGui.BeginTabItem(viewer ? "演出列表" : "点歌队列"))
             {
+                if (!noticeInline) DrawPluginNotice();
                 if (viewer) DrawViewerQueue();
                 else
                 {
@@ -98,6 +110,7 @@ public sealed partial class MainWindow : Window, IDisposable
             }
             if (!viewer && ImGui.BeginTabItem("曲库"))
             {
+                if (!noticeInline) DrawPluginNotice();
                 ImGui.BeginDisabled(!controller.CanEditQueue);
                 if (controller.Room?.IsRemote == true) DrawSharedLibrary();
                 else DrawLibrary();
@@ -106,6 +119,7 @@ public sealed partial class MainWindow : Window, IDisposable
             }
             if (controller.Room?.IsRemote != true && ImGui.BeginTabItem("更多", selectSetlistTab ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None))
             {
+                if (!noticeInline) DrawPluginNotice();
                 ImGui.BeginDisabled(controller.IsReadOnly || controller.IsBusy);
                 if (ImGui.BeginTabBar("AdvancedTabs"))
                 {
@@ -124,8 +138,18 @@ public sealed partial class MainWindow : Window, IDisposable
                 ImGui.EndTabItem();
             }
             if (controller.Room != null && ImGui.BeginTabItem("演出房间"))
-            { DrawRoom(); ImGui.EndTabItem(); }
+            {
+                if (!noticeInline) DrawPluginNotice();
+                DrawRoom(); ImGui.EndTabItem();
+            }
             ImGui.EndTabBar();
+            if (noticeInline)
+            {
+                var contentPosition = ImGui.GetCursorScreenPos();
+                ImGui.SetCursorScreenPos(new Vector2(tabPosition.X + availableWidth - noticeWidth, tabPosition.Y + style.FramePadding.Y));
+                DrawPluginNotice();
+                ImGui.SetCursorScreenPos(contentPosition);
+            }
         }
         var footerHeight = 55 * scale;
         var targetY = ImGui.GetWindowHeight() - footerHeight;
@@ -145,6 +169,14 @@ public sealed partial class MainWindow : Window, IDisposable
         DrawModals();
         DrawRequestModals();
         DrawStageModals();
+    }
+
+    private static void DrawPluginNotice()
+    {
+        ImGui.PushStyleColor(ImGuiCol.Text, UiKit.Muted);
+        ImGui.TextWrapped(PluginNotice);
+        UiKit.RecordItem("pluginNotice");
+        ImGui.PopStyleColor();
     }
 
     private void DrawLibrary()

@@ -26,8 +26,6 @@ internal sealed class StageFeature : IDisposable
     private readonly RoomPlaybackCoordinator roomPlayback;
     private readonly AutoQueuePlayer queue;
     private int requestIssueCount;
-    private string? synchronizedPlayerPaths;
-    private string? pendingPlayerPaths;
     private DateTimeOffset nextLibraryPoll;
     private bool sharedLibrarySeeded;
 
@@ -74,12 +72,11 @@ internal sealed class StageFeature : IDisposable
 
     private void ImportPlaylist()
     {
-        synchronizedPlayerPaths = null;
         nextLibraryPoll = DateTimeOffset.MinValue;
-        SynchronizeLibrary();
+        SynchronizeLibrary(force: true);
     }
 
-    private void SynchronizeLibrary()
+    private void SynchronizeLibrary(bool force = false)
     {
         if (controller.IsBusy || controller.IsReadOnly || controller.Room?.IsRemote == true || DateTimeOffset.UtcNow < nextLibraryPoll) return;
         nextLibraryPoll = DateTimeOffset.UtcNow.AddSeconds(1);
@@ -94,16 +91,10 @@ internal sealed class StageFeature : IDisposable
                 }
                 sharedLibrarySeeded = true;
             }
-            if (pendingPlayerPaths != null)
-            {
-                if (!controller.StatusIsError) synchronizedPlayerPaths = pendingPlayerPaths;
-                pendingPlayerPaths = null;
-            }
             var paths = PlaylistManager.FilePathList.Select(s => s.FilePath)
                 .Where(p => Path.GetExtension(p).Equals(".mid", StringComparison.OrdinalIgnoreCase) || Path.GetExtension(p).Equals(".midi", StringComparison.OrdinalIgnoreCase))
                 .Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            var signature = string.Join('\0', paths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
-            if (signature != synchronizedPlayerPaths && controller.SynchronizePlayerLibrary(paths)) pendingPlayerPaths = signature;
+            controller.SynchronizePlayerLibrary(paths, force);
         }
         catch (Exception ex) { controller.SetStatus("共享曲库同步未完成：" + ex.Message, true); }
     }

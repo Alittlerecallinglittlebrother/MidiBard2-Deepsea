@@ -7,6 +7,18 @@ using Dalamud.Bindings.ImGui;
 using HexaGen.Runtime;
 using Melanchall.DryWetMidi.Core;
 
+if (args.Length >= 1 && args[0] == "--library-sync-check")
+{
+    LibrarySyncRegressionChecks.Run(Path.Combine(Path.GetTempPath(), "BardStage-library-sync-" + Guid.NewGuid()));
+    return;
+}
+
+if (args.Length == 2 && args[0] == "--library-search-check")
+{
+    RuntimeUi.RunLibrarySearchRegressionChecks(Path.GetFullPath(args[1]));
+    return;
+}
+
 if (args.Length == 2 && (args[0] == "--notice-check" || args[0] == "--notice-check-legacy"))
 {
     RuntimeUi.RunNoticeChecks(Path.GetFullPath(args[1]), args[0] == "--notice-check-legacy");
@@ -118,11 +130,13 @@ RoomRuntimeChecks.Run(scratch, midiPath);
 ViewerRuntimeChecks.Run(scratch, midiPath);
 CleanupRuntimeChecks.Run(scratch, midiPath);
 LibraryRuntimeChecks.Run(scratch, midiPath);
+LibrarySyncRegressionChecks.Run(Path.Combine(scratch, "sync-regression"));
 AuthorityRuntimeChecks.Run(scratch, midiPath);
 HandoffRuntimeChecks.Run(scratch, midiPath);
 RuntimeUi.Run(controller, output);
 RuntimeUi.RunAuthorityChecks(midiPath, output);
 HandoffRuntimeChecks.RunUi(scratch, midiPath, output);
+RuntimeUi.RunLibrarySearchRegressionChecks(output);
 Console.WriteLine("PASS: native ImGui runtime and controller checks completed. No game playback invoked.");
 
 static void Check(bool condition, string message)

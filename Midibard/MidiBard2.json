@@ -12,7 +12,7 @@
     ],
     "AcceptsFeedback": "False",
     "IconUrl": "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/icon.png",
-    "Changelog": "3.2.5.20：修复自动点歌窗口顶部开源免费说明换行的问题，始终完整单行显示；空间不足时仅缩小此说明字体，不再逐字换行，其余行为不变，不含实验性演奏中换乐器功能。",
+    "Changelog": "3.2.5.21：修复异常 MIDI 导致曲库每秒反复同步、界面闪烁及搜索被打断；兼容异常通道事件参数，问题文件未变化时不再自动重复导入，同步期间仍可搜索曲库。保留 MIDI 原文件，不含实验性演奏中换乐器功能。",
     "ImageUrls": [
         "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/docs/images/queue.png",
         "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/docs/images/viewer.png"

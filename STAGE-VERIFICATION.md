@@ -1,5 +1,42 @@
-# 深海回响特供版 3.2.5.20 验证
+# 深海回响特供版 3.2.5.21 验证
 
+## 3.2.5.21 发布
+
+2026-09-19：修复异常 MIDI 触发共享曲库每秒重复同步、窗口反复变灰和搜索输入中断。基线为源码提交 `bf3b41a` / 3.2.5.20；本轮通过 GitHub Release 和在线索引发布；插件二进制与通过本地检查的修复候选一致，重新打包发布文档并从发布标签生成对应源码。未替换运行中的插件或修改个人曲库/配置。
+
+### 原因与修复
+
+- 原自动同步仅在底部 `StatusIsError` 为 false 时记住已完成路径；某个文件解析失败就会重复导入并保存。现在同步尝试、实际持久化成功及 UI 提示分别处理，不再用底部提示判断事务结果。
+- 对异常 MIDI 通道事件参数采用与原播放器一致的 `ReadValid` 处理，只影响内存中的解析对象；其余结构检查仍严格。不能读取的文件不会阻断正常文件，也不会在文件未变化时自动反复重试；修复后自动重试，刷新按钮可强制重试。
+- 同步只禁止曲库写入，搜索、人数筛选、选择和查看歌曲保持可用。删除、资料保存、导入和加入队列保留原权限与忙碌保护。
+- 没有改演奏算法、多人通信协议或演奏中换乐器功能。
+
+### 本轮实测
+
+- 实际问题文件 `PVZ选择植物时BGM.mid` 的严格读取准确复现 `255 is invalid value for parameter of channel event of ControlChange type.`；修复后导入 1 首、0 错误，7 个总轨道、5 个含音符轨道、966 个音符、时长 100.923063 秒。
+- 在实际曲库的只读内存副本中，原有 248 首全部保留原 ID，问题曲导入后 249 首；未保存回用户曲库。原文件字节、修改时间和 SHA256 未变化，SHA256 为 `7915370DF72BA02854F2BC5A3762B2C9A6CAF7A3C03DE7F36344B6312855FEFC`。
+- 核心 xUnit：253/253 通过、0 失败、0 跳过；新增 4 项在旧严格读取实现中均失败，在修复实现中通过。
+- 同步专项：19 条 PASS，覆盖异常文件和保存失败各 120 次静默轮询、状态错误隔离、手动重试、修复文件和补齐缺失文件。
+- 原生 ImGui 搜索专项：76 条 PASS，包含 16 次 Busy/Idle 交替中的真实逐字符输入、无匹配结果、中文恢复、队长权限变化、只读删除保护和 760×540 / 140% 字体。已查看普通及放大字体截图。
+- 完整运行检查：378 条 PASS，退出码 0；其中包含上述同步/搜索断言，不能把各数字相加当成独立用例总数。自动乐器分配 54 条 PASS，小队播放检查 29 条 PASS。
+- Release 构建：43 个现有警告、0 错误；程序集与插件清单均为 3.2.5.21 / API 15。
+- 检查宿主的两项旧/新增测试问题已修正：原生 Popup 查询移到有效绘制帧；旧固定坐标加歌点击改用实际控件 ID。最终专项和全量检查均退出 0。初次失败不作为插件现场崩溃证据。
+
+截图来自独立原生 ImGui 宿主；实际游戏内加载、发声及多人公网演奏未在本轮验证。
+
+### 复现命令
+
+```powershell
+dotnet test Stage/BardStage.Core.Tests/BardStage.Core.Tests.csproj -c Release
+dotnet run --project Stage/BardStage.RuntimeTests/BardStage.RuntimeTests.csproj -c Release -- --library-sync-check
+dotnet run --project Stage/BardStage.RuntimeTests/BardStage.RuntimeTests.csproj -c Release -- --library-search-check verification
+dotnet run --project Stage/BardStage.RuntimeTests/BardStage.RuntimeTests.csproj -c Release -- verification
+dotnet run --project Stage/BardStage.AutoAssignmentTests/BardStage.AutoAssignmentTests.csproj -c Release
+dotnet run --project Stage/BardStage.PartyPlaybackTests/BardStage.PartyPlaybackTests.csproj -c Release
+./build-stage.ps1 -SkipChecks
+```
+
+以下为历史版本验证记录，不作为本轮游戏内验收。
 ## 3.2.5.20 发布
 
 2026-09-19：3.2.5.19 只删除了句号，原有 `TextWrapped` 仍可能把末字移到第二行。本版将说明改为不换行的完整文本绘制；空间不足时仅缩小说明字号，保留整句和其他控件的原有字号。标签栏右侧增加测量取整余量。

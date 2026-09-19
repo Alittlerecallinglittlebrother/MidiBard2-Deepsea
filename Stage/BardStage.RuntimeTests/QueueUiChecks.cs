@@ -144,7 +144,8 @@ internal static unsafe partial class RuntimeUi
             Frame(window, 1100, 740); Frame(window, 1100, 740); Frame(window, 1100, 740);
             SoftwareRenderer.Save(Path.Combine(output, "advanced-setlist.png"));
             Frame(window, 760, 540); Frame(window, 760, 540);
-            Click(window, 23, 221, 760, 540); Frame(window, 760, 540); Frame(window, 760, 540);
+            // The notice and timeline summary can change vertical placement; target the actual button.
+            ClickItem(window, "addSong", 760, 540); Frame(window, 760, 540); Frame(window, 760, 540);
             SoftwareRenderer.Save(Path.Combine(output, "advanced-picker-small.png"));
             bounds = PickerBounds(); count = controller.CurrentSetlist!.Entries.Count;
             if (bounds.W - bounds.Y < 200) throw new InvalidOperationException("legacy search popup still collapsed");

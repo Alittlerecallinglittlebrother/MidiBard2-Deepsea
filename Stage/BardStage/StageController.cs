@@ -161,12 +161,15 @@ public sealed partial class StageController : IDisposable
             AutoQueueOperations.ArrangePending(state);
             SaveWithPlayerLibrary(state, State, importingPlayerLibrary);
             State = state;
+            if (importingPlayerLibrary) CompletePlayerLibrarySynchronization(state);
             QueueRevision++;
             Volatile.Write(ref receptionSettings, Clone(State.RequestSettings));
             var summary = $"导入 {report.Added} 首，跳过重复 {report.Duplicates} 首，修复路径 {report.Relocated} 首";
             if (report.Errors.Count > 0)
             {
-                summary += $"；{report.Errors.Count} 个问题\n" + string.Join("\n", report.Errors.Take(5));
+                summary += $"；{report.Errors.Count} 个问题";
+                if (importingPlayerLibrary) summary += "（已跳过，修复文件后自动重试，或点击刷新共享曲库）";
+                summary += "\n" + string.Join("\n", report.Errors.Take(5));
                 if (report.Errors.Count > 5) summary += "\n其余问题已写入 import-errors.txt";
                 try { File.WriteAllLines(Path.Combine(DataDirectory, "import-errors.txt"), report.Errors); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { summary += "\n问题记录未能写入文件"; }
@@ -174,7 +177,11 @@ public sealed partial class StageController : IDisposable
             SetStatus(summary, report.Errors.Count > 0);
         }
         catch (OperationCanceledException) { SetStatus("已取消导入"); }
-        catch (Exception ex) { SetStatus($"导入未保存：{ex.Message}", true); }
+        catch (Exception ex)
+        {
+            var retry = importingPlayerLibrary ? "（自动重试已暂停，请解决问题后点击刷新共享曲库）" : "";
+            SetStatus($"导入未保存{retry}：{ex.Message}", true);
+        }
         finally { importingPlayerLibrary = false; }
     }
 

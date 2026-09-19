@@ -112,10 +112,13 @@ public sealed partial class MainWindow : Window, IDisposable
             if (!viewer && ImGui.BeginTabItem("曲库"))
             {
                 if (!noticeInline) DrawPluginNotice();
-                ImGui.BeginDisabled(!controller.CanEditQueue);
-                if (controller.Room?.IsRemote == true) DrawSharedLibrary();
+                if (controller.Room?.IsRemote == true)
+                {
+                    ImGui.BeginDisabled(!controller.CanEditQueue);
+                    DrawSharedLibrary();
+                    ImGui.EndDisabled();
+                }
                 else DrawLibrary();
-                ImGui.EndDisabled();
                 ImGui.EndTabItem();
             }
             if (controller.Room?.IsRemote != true && ImGui.BeginTabItem("更多", selectSetlistTab ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None))
@@ -191,6 +194,8 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void DrawLibrary()
     {
+        // Synchronization locks catalog mutations, not local browsing or the active search input.
+        ImGui.BeginDisabled(!controller.CanEditQueue);
         if (UiKit.Icon(FontAwesomeIcon.FileImport, "importFiles", "导入 MIDI 文件"))
             dialogs.OpenFileDialog("导入 MIDI", ".mid,.midi", (ok, paths) => { if (ok) controller.Import(paths); }, 9999, null!, false);
         ImGui.SameLine();
@@ -204,9 +209,11 @@ public sealed partial class MainWindow : Window, IDisposable
             {
                 if (controller.ClearLibrary()) selectedSongId = null;
             });
+        ImGui.EndDisabled();
         ImGui.SameLine();
         ImGui.SetNextItemWidth(Math.Max(120, Math.Min(230 * UiKit.Scale, ImGui.GetContentRegionAvail().X - 140 * UiKit.Scale)));
         ImGui.InputTextWithHint("##search", "搜索曲名、别名、编曲者", ref search, 256);
+        UiKit.RecordItem("librarySearch");
         ImGui.SameLine();
         ImGui.SetNextItemWidth(120 * UiKit.Scale);
         if (ImGui.BeginCombo("##performerFilter", performerFilter < 0 ? "全部人数" : performerFilter == 0 ? "人数未填写" : $"{performerFilter} 人"))
@@ -259,12 +266,13 @@ public sealed partial class MainWindow : Window, IDisposable
             ImGui.TableNextRow();
             ImGui.TableNextColumn();
             if (ImGui.Selectable(song.Title + "##select", selectedSongId == song.Id)) SelectSong(song);
+            UiKit.RecordItem("librarySong:" + song.Id);
             UiKit.Tip(song.FilePath);
             ImGui.TableNextColumn(); ImGui.TextUnformatted(song.PerformerCount == 0 ? "未填" : song.PerformerCount.ToString());
             ImGui.TableNextColumn(); ImGui.TextUnformatted(UiKit.Duration(song.DurationSeconds));
             ImGui.TableNextColumn(); ImGui.TextUnformatted(song.Arranger);
             ImGui.TableNextColumn();
-            if (UiKit.Icon(FontAwesomeIcon.TrashAlt, "deleteLibrarySong", "从共享曲库删除", controller.CanDeleteSong(song.Id))) ConfirmDeleteSong(song);
+            if (UiKit.Icon(FontAwesomeIcon.TrashAlt, "deleteLibrarySong", "从共享曲库删除", controller.CanEditQueue && controller.CanDeleteSong(song.Id))) ConfirmDeleteSong(song);
             UiKit.RecordItem("deleteLibrarySong:" + song.Id);
             ImGui.PopID();
         }
@@ -287,6 +295,7 @@ public sealed partial class MainWindow : Window, IDisposable
         if (song == null) { UiKit.MutedText("未选择曲目"); return; }
         ImGui.TextUnformatted("曲目资料");
         ImGui.Separator();
+        ImGui.BeginDisabled(!controller.CanEditQueue);
         Field("展示曲名", "songTitle", ref songTitle, 256);
         Field("别名（分号分隔）", "aliases", ref songAliases, 1024);
         Field("编曲者 / 版本", "arranger", ref songArranger, 256);
@@ -315,6 +324,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
         ImGui.SameLine();
         if (UiKit.Icon(FontAwesomeIcon.Undo, "resetSongDraft", "撤销未保存的资料编辑")) SelectSong(song);
+        ImGui.EndDisabled();
         ImGui.Spacing();
         ImGui.Separator();
         ImGui.TextUnformatted($"{song.TrackCount} 音轨  ·  {UiKit.Duration(song.DurationSeconds)}");
@@ -327,10 +337,12 @@ public sealed partial class MainWindow : Window, IDisposable
         ImGui.SameLine();
         if (UiKit.Icon(FontAwesomeIcon.FolderOpen, "revealSong", "在文件夹中显示", exists)) controller.OpenPath(song.FilePath, true);
         ImGui.SameLine();
-        if (UiKit.Icon(FontAwesomeIcon.Trash, "deleteSong", "从共享曲库删除", controller.CanDeleteSong(song.Id))) ConfirmDeleteSong(song);
+        if (UiKit.Icon(FontAwesomeIcon.Trash, "deleteSong", "从共享曲库删除", controller.CanEditQueue && controller.CanDeleteSong(song.Id))) ConfirmDeleteSong(song);
         ImGui.Spacing();
         ImGui.Separator();
+        ImGui.BeginDisabled(!controller.CanEditQueue);
         if (ImGui.Button("加入点歌队列", new Vector2(-1, 0))) controller.AddToQueue(song.Id);
+        ImGui.EndDisabled();
     }
 
     private void ConfirmDeleteSong(SongEntry song) => Confirm($"删除《{song.Title}》？将同步移除 MidiBard 中的歌曲和节目单关联条目。MIDI 原文件和演出记录保留。", () =>

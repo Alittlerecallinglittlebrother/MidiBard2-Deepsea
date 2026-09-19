@@ -58,7 +58,13 @@ public sealed class MidiLibraryImporter
                 }
 
                 using var stream = new MemoryStream(bytes, writable: false);
-                var midi = MidiFile.Read(stream);
+                // Match the player's handling of out-of-range channel data (for example CC 255).
+                // This repairs only the in-memory event value; the original bytes/hash stay intact.
+                // Keep structural checks strict so a non-MIDI or truncated file is still rejected.
+                var midi = MidiFile.Read(stream, new ReadingSettings
+                {
+                    InvalidChannelEventParameterValuePolicy = InvalidChannelEventParameterValuePolicy.ReadValid,
+                });
                 var duration = (TimeSpan)midi.GetDuration<MetricTimeSpan>();
                 var noteTracks = midi.GetTrackChunks().Count(x => x.GetNotes().Any());
                 cancellationToken.ThrowIfCancellationRequested();

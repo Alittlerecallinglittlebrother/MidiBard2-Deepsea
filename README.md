@@ -2,13 +2,13 @@
 
 FF14 / 卫月（Dalamud CN）演奏插件，基于 [reckhou/MidiBard2](https://github.com/reckhou/MidiBard2) 的 `v3-api15-stable` 分支开发。本仓库维护深海回响定制版源码、安装索引及版本发布。
 
-当前版本 **3.2.5.20**，Dalamud API 15，Windows x64 / .NET 10。作者署名：akira0245, Ori, Kalle, Zune, 断水剑, SevenCat。
+在线版本 **3.2.5.21**，Dalamud API 15，Windows x64 / .NET 10。作者署名：akira0245, Ori, Kalle, Zune, 断水剑, SevenCat。
 
 基于midibard2的魔改版本，添加自动点歌、歌单、控制台、不同IP连接功能。
 
 本插件基于midibard2开源代码魔改制作，完全免费，旨在打造一个更低门槛、更有活力的游戏演奏环境
 
-已安装旧版的用户，刷新卫月插件仓库后可直接更新至 **3.2.5.20**。开发插件用户请停用旧版，完整解压 [3.2.5.20 安装包](https://github.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/releases/download/v3.2.5.20/MidiBard2.zip)，重新指定其中的 `MidiBard2.dll`。不要同时启用多个版本。
+已安装旧版的用户，刷新卫月插件仓库后可直接更新至 **3.2.5.21**。开发插件用户请停用旧版，完整解压 [3.2.5.21 安装包](https://github.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/releases/download/v3.2.5.21/MidiBard2.zip)，重新指定其中的 `MidiBard2.dll`。不要同时启用多个版本。
 
 ## 安装
 
@@ -34,6 +34,12 @@ https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepse
 全队需预先备齐相同 MIDI，演出房间不传输歌曲文件。多设备合奏须开启 PMD 和合奏监听，候任队长须提前加入原房间。详见 [使用说明](STAGE-README.md)、[演出房间与自动接管](STAGE-ROOM.md) 和 [状态接口](STAGE-IPC.md)。
 
 ![自动点歌与联系作者入口](docs/images/queue.png)
+
+## 3.2.5.21 更新
+
+修复异常 MIDI 触发共享曲库每秒重复导入，导致窗口闪烁、搜索输入被反复禁用的问题。曲库导入对通道事件参数采用与播放器相同的 `ReadValid` 容错策略，仅作用于内存，不改写 MIDI 原文件。仍无法读取的文件在没有变化时跳过，修复文件或点击“刷新共享曲库”后重试；保存失败单独记录，不再作为同步成功。
+
+曲库搜索、人数筛选、选择及查看歌曲在后台同步期间保持可用；写入、删除和加入队列继续遵守原有权限与忙碌保护。本版保留原有配置与 MIDI 文件，可通过在线仓库更新。验证见 [验证记录](STAGE-VERIFICATION.md)。
 
 ## 3.2.5.20 更新
 

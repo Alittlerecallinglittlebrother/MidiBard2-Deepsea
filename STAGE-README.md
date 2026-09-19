@@ -1,6 +1,8 @@
 # midibard2-深海回响特供版
 
-版本 `3.2.5.15`（v0.11.3），Dalamud API 15，Windows x64 / .NET 10。作者：akira0245, Ori, Kalle, Zune, 断水剑。基于 `reckhou/MidiBard2` 的 `v3-api15-stable`，提交 `d8d1bd4454604cc837affd593fc3b982f33433e7`。这是深海回响定制分支，不含 OBS 联动。
+当前版本：**3.2.5.16 正式版**。新增默认关闭的“演奏中换乐器”；启用前阅读 [LIVE-INSTRUMENT-SWITCH.md](LIVE-INSTRUMENT-SWITCH.md)。独立开发入口为 `%APPDATA%/XIVLauncherCN/devPlugins/MidiBard2-Deepsea-v0.12/MidiBard2.dll`，在线订阅见 [README.md](README.md)。
+
+版本 `3.2.5.16`（v0.12），Dalamud API 15，Windows x64 / .NET 10。作者：akira0245, Ori, Kalle, Zune, 断水剑。基于 `reckhou/MidiBard2` 的 `v3-api15-stable`，提交 `d8d1bd4454604cc837affd593fc3b982f33433e7`。这是深海回响定制分支，不含 OBS 联动。
 
 本版重新整理播放控制、拖动排序和共享曲库，并按音轨名字及队长的小队显示顺序自动安排合奏。欢迎语音及其资源、依赖和设置页已移除。旧版原始音频不受影响。
 

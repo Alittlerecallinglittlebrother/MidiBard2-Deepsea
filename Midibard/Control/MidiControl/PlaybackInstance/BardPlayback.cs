@@ -40,6 +40,7 @@ internal sealed class BardPlayback : Playback
 {
     internal MidiFileConfig MidiFileConfig { get; set; }
     internal bool IsSoloPlayback { get; init; }
+    internal bool IsContinuityEnsemble { get; set; }
     internal MidiFile MidiFile { get; init; }
     internal string FilePath { get; init; }
     internal TrackChunk[] TrackChunks { get; init; }

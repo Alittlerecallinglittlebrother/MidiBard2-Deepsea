@@ -12,7 +12,7 @@
     ],
     "AcceptsFeedback": "False",
     "IconUrl": "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/icon.png",
-    "Changelog": "3.2.5.15：原 MidiBard 主窗口底部与自动点歌窗口顶部新增“联系作者”按钮，点击通过默认浏览器打开 https://shenhai.meoo.zone/ 。保留 3.2.5.14 的点歌载入修复和游戏队长自动接管。",
+    "Changelog": "3.2.5.16：新增默认关闭的演奏中换乐器开关。全队在开奏前启用后，换乐器角色暂时静音，保留 MIDI 时钟，在换好后的下一可用小节恢复。启用后使用插件停止按钮结束演出，不保证维持游戏原生合奏状态。已通过本地回归检查，游戏内多人演奏仍待验收。",
     "ImageUrls": [
         "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/docs/images/queue.png",
         "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/docs/images/viewer.png"

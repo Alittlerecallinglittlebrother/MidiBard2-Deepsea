@@ -68,6 +68,11 @@ public partial class PluginUI
         }
         ImGuiUtil.ToolTip(Language.setting_tooltip_monitor_ensemble);
 
+        ImGui.BeginDisabled(MidiBard.IsPlaying || EnsembleContinuity.IsActive || MidiBard.AgentMetronome.EnsembleModeRunning);
+        if (ImGui.Checkbox("演奏中换乐器", ref MidiBard.config.ExperimentalLiveInstrumentSwitch)) MidiBard.SaveConfig();
+        ImGui.EndDisabled();
+        ImGuiUtil.ToolTip("本机独立开关，全队须启用后再开奏。换乐器时保持 MIDI 时钟，在下一可用小节恢复；结束演出使用插件停止按钮。");
+
         //-------------------
 
         bool pmdWasOn = MidiBard.config.playOnMultipleDevices;

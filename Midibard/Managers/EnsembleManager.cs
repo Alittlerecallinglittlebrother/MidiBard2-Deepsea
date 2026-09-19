@@ -64,6 +64,7 @@ internal class EnsembleManager : IDisposable
 
     internal static unsafe void BeginEnsembleReadyCheck()
     {
+        if (EnsembleContinuity.IsActive) return;
         var ensembleRunning = MidiBard.AgentMetronome.EnsembleModeRunning;
         if (!ensembleRunning)
         {
@@ -113,6 +114,7 @@ internal class EnsembleManager : IDisposable
 
     private static void StartEnsemble()
     {
+        if (EnsembleContinuity.IsActive) return;
         EnsembleRecvTime.Clear();
         EnsemblePrepare?.Invoke();
 
@@ -128,9 +130,10 @@ internal class EnsembleManager : IDisposable
         }
         else
         {
-            EnsembleTimer.Restart();
             MidiBard.CurrentPlayback.Stop();
             MidiBard.CurrentPlayback.MoveToStart();
+            EnsembleContinuity.Begin(MidiBard.CurrentPlayback);
+            EnsembleTimer.Restart();
 
             try
             {

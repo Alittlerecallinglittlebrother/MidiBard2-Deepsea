@@ -69,6 +69,11 @@ internal static class MidiPlayerControl
     public static void DoPlay(bool isEnsemble = false)
     {
         if (MidiBard.CurrentPlayback == null) return;
+        if (!isEnsemble && !Managers.EnsembleContinuity.IsActive)
+        {
+            Managers.EnsembleContinuity.Cancel();
+            MidiBard.CurrentPlayback.IsContinuityEnsemble = false;
+        }
 
         if (MidiBard.config.autoPostSongName)
         {
@@ -90,6 +95,7 @@ internal static class MidiPlayerControl
     internal static void Pause()
     {
         MidiBard.CurrentPlayback?.Stop();
+        if (Managers.EnsembleContinuity.IsActive) MidiBard.BardPlayDevice.ClearPlaybackNotes();
         _stat = e_stat.Paused;
     }
 
@@ -116,6 +122,8 @@ internal static class MidiPlayerControl
 
     internal static void Stop()
     {
+        if (Managers.EnsembleContinuity.IsActive) MidiBard.CurrentPlayback?.Stop();
+        Managers.EnsembleContinuity.Cancel();
         MidiBard.Stage?.StopPlayback();
         // Set song as played if stoped
         PlaylistManager.SetCurrentSongAsPlayed();
@@ -190,6 +198,7 @@ internal static class MidiPlayerControl
                 bardPlayback.MoveToTime(time);
                 bardPlayback.PlaybackStart = time;
             }
+            Managers.EnsembleContinuity.Rebase();
         }
         catch (Exception e)
         {

@@ -36,7 +36,7 @@ public partial class PluginUI
 
     private void DrawEnsembleControlMenu()
     {
-        var ensembleRunning = MidiBard.AgentMetronome.EnsembleModeRunning;
+        var ensembleRunning = MidiBard.AgentMetronome.EnsembleModeRunning || EnsembleContinuity.IsActive;
         var isEnsembleButtonsDisabled = MidiBard.CurrentPlayback == null || MidiBard.CurrentPlayback.IsSoloPlayback
             || PlaylistManager.IsLoading || ensembleRunning || MidiBard.IsPlaying;
 

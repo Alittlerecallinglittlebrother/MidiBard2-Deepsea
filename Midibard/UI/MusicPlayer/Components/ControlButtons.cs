@@ -175,8 +175,8 @@ public partial class PluginUI
         }
         else if (api.PartyList.Length <= 1)
         {
-            SwitchInstrument.SwitchToContinue(0);
             MidiPlayerControl.Stop();
+            _ = SwitchInstrument.SwitchToAsync(0);
             return;
         }
         else

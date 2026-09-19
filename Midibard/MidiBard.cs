@@ -164,6 +164,7 @@ public partial class MidiBard : IDalamudPlugin
     private void OnFrameworkUpdate(IFramework framework)
     {
         StageIntegration.EnsembleTransport.Tick();
+        Managers.EnsembleContinuity.Tick();
         PerformanceEvents.Instance.InPerformanceMode = AgentPerformance.InPerformanceMode;
 
         if (Ui.MainWindowOpened)
@@ -179,7 +180,8 @@ public partial class MidiBard : IDalamudPlugin
 
         if (wasEnsembleModeRunning)
         {
-            if (!AgentMetronome.EnsembleModeRunning || !AgentPerformance.InPerformanceMode)
+            if ((!AgentMetronome.EnsembleModeRunning || !AgentPerformance.InPerformanceMode)
+                && !Managers.EnsembleContinuity.IsActive)
             {
                 EnsembleManager.InvokeEnsembleStop();
                 if (config.StopPlayingWhenEnsembleEnds)
@@ -285,6 +287,7 @@ public partial class MidiBard : IDalamudPlugin
             Testhooks.Instance?.Dispose();
 #endif
             InputDeviceManager.ShouldScanMidiDeviceThread = false;
+            Managers.EnsembleContinuity.Cancel();
             Stage?.Dispose();
             Stage = null;
             api.Framework.Update -= OnFrameworkUpdate;

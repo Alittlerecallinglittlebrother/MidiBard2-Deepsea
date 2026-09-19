@@ -1,0 +1,60 @@
+﻿/*
+ * Copyright(c) 2026 GiR-Zippo
+ * Licensed under the GPL v3 license. See https://github.com/GiR-Zippo/LightAmp/blob/main/LICENSE for full license information.
+ */
+
+using System.Collections.Generic;
+
+namespace BardMusicPlayer.XIVMIDI
+{
+    public enum Requester
+    {
+        NONE = 0,
+        JSON = 1,
+        DOWNLOAD = 2
+    }
+
+    public static class Misc
+    {
+        public static readonly Dictionary<int, string> Sources = new Dictionary<int, string>
+        {
+            [0] = "XIVMIDI",
+            [1] = "BMP"
+        };
+
+        public static readonly Dictionary<int, string> PerformerSize = new Dictionary<int, string>
+        {
+            [0] = "None",
+            [1] = "Solo",
+            [2] = "Duet",
+            [3] = "Trio",
+            [4] = "Quartet",
+            [5] = "Quintet",
+            [6] = "Sextet",
+            [7] = "Septet",
+            [8] = "Octet"
+        };
+
+        /// <summary>
+        /// Decode the searchstring: returns "artist" "editor" "search"
+        /// </summary>
+        public static Dictionary<string, string> DecodeSearch(string searchString)
+        {
+            Dictionary<string, string> data = new();
+            data["artist"] = "";
+            data["editor"] = "";
+            data["search"] = "";
+            var search = searchString.Split(';');
+            foreach (var item in search)
+            {
+                if (item.StartsWith("a:"))
+                    data["artist"] = item.Replace("a:", "");
+                else if (item.StartsWith("e:"))
+                    data["editor"] = item.Replace("e:", "");
+                else
+                    data["search"] = item;
+            }
+            return data;
+        }
+    }
+}

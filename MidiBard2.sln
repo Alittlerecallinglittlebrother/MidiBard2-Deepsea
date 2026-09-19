@@ -1,0 +1,53 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.1.31911.260
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MidiBard2", "Midibard\MidiBard2.csproj", "{07727526-FA4F-435C-85BF-2DE96BD41470}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BardMusicPlayer.XIVMIDI", "BardMusicPlayer.XIVMIDI\BardMusicPlayer.XIVMIDI.csproj", "{850D6B1B-D612-C1F0-9CCF-2F0CB1C28F02}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		DEBUG2|Any CPU = DEBUG2|Any CPU
+		DEBUG2|x64 = DEBUG2|x64
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{07727526-FA4F-435C-85BF-2DE96BD41470}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{07727526-FA4F-435C-85BF-2DE96BD41470}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{07727526-FA4F-435C-85BF-2DE96BD41470}.Debug|x64.ActiveCfg = Debug|x64
+		{07727526-FA4F-435C-85BF-2DE96BD41470}.Debug|x64.Build.0 = Debug|x64
+		{07727526-FA4F-435C-85BF-2DE96BD41470}.DEBUG2|Any CPU.ActiveCfg = DEBUG2|Any CPU
+		{07727526-FA4F-435C-85BF-2DE96BD41470}.DEBUG2|Any CPU.Build.0 = DEBUG2|Any CPU
+		{07727526-FA4F-435C-85BF-2DE96BD41470}.DEBUG2|x64.ActiveCfg = DEBUG2|x64
+		{07727526-FA4F-435C-85BF-2DE96BD41470}.DEBUG2|x64.Build.0 = DEBUG2|x64
+		{07727526-FA4F-435C-85BF-2DE96BD41470}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{07727526-FA4F-435C-85BF-2DE96BD41470}.Release|Any CPU.Build.0 = Release|Any CPU
+		{07727526-FA4F-435C-85BF-2DE96BD41470}.Release|x64.ActiveCfg = Release|x64
+		{07727526-FA4F-435C-85BF-2DE96BD41470}.Release|x64.Build.0 = Release|x64
+		{850D6B1B-D612-C1F0-9CCF-2F0CB1C28F02}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{850D6B1B-D612-C1F0-9CCF-2F0CB1C28F02}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{850D6B1B-D612-C1F0-9CCF-2F0CB1C28F02}.Debug|x64.ActiveCfg = Debug|x64
+		{850D6B1B-D612-C1F0-9CCF-2F0CB1C28F02}.Debug|x64.Build.0 = Debug|x64
+		{850D6B1B-D612-C1F0-9CCF-2F0CB1C28F02}.DEBUG2|Any CPU.ActiveCfg = Debug|Any CPU
+		{850D6B1B-D612-C1F0-9CCF-2F0CB1C28F02}.DEBUG2|Any CPU.Build.0 = Debug|Any CPU
+		{850D6B1B-D612-C1F0-9CCF-2F0CB1C28F02}.DEBUG2|x64.ActiveCfg = Debug|x64
+		{850D6B1B-D612-C1F0-9CCF-2F0CB1C28F02}.DEBUG2|x64.Build.0 = Debug|x64
+		{850D6B1B-D612-C1F0-9CCF-2F0CB1C28F02}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{850D6B1B-D612-C1F0-9CCF-2F0CB1C28F02}.Release|Any CPU.Build.0 = Release|Any CPU
+		{850D6B1B-D612-C1F0-9CCF-2F0CB1C28F02}.Release|x64.ActiveCfg = Release|x64
+		{850D6B1B-D612-C1F0-9CCF-2F0CB1C28F02}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		                SolutionGuid = {5A46B208-8464-4CDA-BF03-714B4070FE9E}
+		                RESX_NeutralResourcesLanguage = en-US
+		SolutionGuid = {8546EF60-967D-4BAD-8611-F456F6A865C3}
+	EndGlobalSection
+EndGlobal

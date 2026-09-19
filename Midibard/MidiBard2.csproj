@@ -1,0 +1,102 @@
+<Project Sdk="Dalamud.NET.SDK/15.0.0">
+    <PropertyGroup>
+        <DalamudLibPath Condition="!Exists('$(DalamudLibPath)') and Exists('$(APPDATA)\XIVLauncherCN\addon\Hooks\dev')">$(APPDATA)\XIVLauncherCN\addon\Hooks\dev\</DalamudLibPath>
+        <AssemblySearchPaths>$(AssemblySearchPaths);$(DalamudLibPath)</AssemblySearchPaths>
+        <TargetFramework>net10.0-windows7.0</TargetFramework>
+        <LangVersion>latest</LangVersion>
+        <AssemblyVersion>3.2.5.15</AssemblyVersion>
+        <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <Nullable>disable</Nullable>
+        <UseWpf>true</UseWpf>
+        <Configurations>Debug;Release;DEBUG2</Configurations>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <Platforms>AnyCPU;x64</Platforms>
+    </PropertyGroup>
+    <PropertyGroup>
+        <!--<TieredCompilation>false</TieredCompilation>-->
+        <TieredCompilationQuickJit>false</TieredCompilationQuickJit>
+        <TieredCompilationQuickJitForLoops>false</TieredCompilationQuickJitForLoops>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+        <PlatformTarget>x64</PlatformTarget>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+        <PlatformTarget>x64</PlatformTarget>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+        <PlatformTarget>x64</PlatformTarget>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+        <PlatformTarget>x64</PlatformTarget>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Fody" Version="6.9.3" PrivateAssets="all" />
+        <PackageReference Include="protobuf-net" Version="3.2.56" />
+        <PackageReference Include="Resourcer.Fody" Version="1.8.1" PrivateAssets="all" />
+        <!--<PackageReference
+        Include="ILRepack" Version="2.0.18" />-->
+        <PackageReference Include="Melanchall.DryWetMidi" Version="7.2.0" />
+        <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.9" />
+        <PackageReference Include="TinyIpc" Version="5.2.1" />
+        <PackageReference Include="TinyIpc.Shim" Version="0.0.8" />
+        <PackageReference Include="XivIpc" Version="0.0.8" />
+    </ItemGroup>
+    <ItemGroup>
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\BardMusicPlayer.XIVMIDI\BardMusicPlayer.XIVMIDI.csproj" />
+        <ProjectReference Include="..\Stage\BardStage\BardStage.Module.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <Reference Include="Dalamud.Bindings.ImGui" HintPath="$(AppData)\XIVLauncher\addon\Hooks\dev\Dalamud.Bindings.ImGui.dll" Private="false" />
+        <Reference Include="Dalamud.Bindings.ImGuizmo" HintPath="$(AppData)\XIVLauncher\addon\Hooks\dev\Dalamud.Bindings.ImGuizmo.dll" Private="false" />
+        <Reference Include="Dalamud.Bindings.ImPlot" HintPath="$(AppData)\XIVLauncher\addon\Hooks\dev\Dalamud.Bindings.ImPlot.dll" Private="false" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Update="Resources\Language.resx">
+            <Generator>ResXFileCodeGenerator</Generator>
+            <LastGenOutput>Language.Designer.cs</LastGenOutput>
+        </EmbeddedResource>
+        <EmbeddedResource Update="Resources\Language.zh-Hans.resx">
+            <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+        </EmbeddedResource>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Service Include="{508349b6-6b84-4df5-91f0-309beebad82d}" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Compile Update="Resources\Language.Designer.cs">
+            <DesignTime>True</DesignTime>
+            <AutoGen>True</AutoGen>
+            <DependentUpon>Language.resx</DependentUpon>
+        </Compile>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Update="DalamudPackager" Version="15.0.0" />
+        <PackageReference Update="DotNet.ReproducibleBuilds" Version="2.0.5" />
+    </ItemGroup>
+
+    <Target Name="CleanOutDir" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+        <ItemGroup>
+            <!--<DeleteAssemblies
+            Include="$(TargetDir)*.pdb" />-->
+            <DeleteAssemblies Include="$(TargetDir)$(AssemblyName).deps.json" />
+        </ItemGroup>
+        <Message Text="Deleting @(DeleteAssemblies)" Importance="high" />
+        <Delete Files="@(DeleteAssemblies)" />
+        <RemoveDir Directories="$(TargetDir)\ref\" />
+    </Target>
+
+    <Target Name="PackagePlugin" AfterTargets="CleanOutDir" Condition="'$(Configuration)' == 'Release'">
+        <DalamudPackager ProjectDir="$(ProjectDir)" OutputPath="$(OutputPath)" Exclude="*.pdb;" AssemblyName="$(AssemblyName)" MakeZip="true" />
+    </Target>
+
+    <Target Name="PreBuild" BeforeTargets="PreBuildEvent" Condition="'$(FormatOnBuild)' == 'true'">
+        <Exec Command="dotnet format" />
+    </Target>
+</Project>

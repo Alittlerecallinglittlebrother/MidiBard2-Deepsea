@@ -1,0 +1,32 @@
+[
+  {
+    "Author": "akira0245, Ori, Kalle, Zune, 断水剑",
+    "Name": "midibard2-深海回响特供版",
+    "InternalName": "MidiBard2",
+    "AssemblyVersion": "3.2.5.15",
+    "Description": "基于 reckhou/MidiBard2 的深海回响定制版本。主持人无需入队，可调整队列与控制连播；队员通过独立查看邀请查看演出顺序。合奏房间支持随游戏队长自动交接演奏权，保留房间、主持人连接和待演队列；原房主及樱花隧道须保持在线，原房主须留在小队。支持观众自动点歌、单人及合奏主控、演出记录。保留原作者署名，不含 OBS 联动。与原版共用 MidiBard2 标识，不可同时启用。公网隧道及游戏内演奏仍待验收。",
+    "ApplicableVersion": "any",
+    "RepoUrl": "https://github.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea",
+    "Tags": [
+      "music",
+      "utility",
+      "midi",
+      "bard"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "ImageUrls": [
+      "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/docs/images/queue.png",
+      "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/docs/images/viewer.png"
+    ],
+    "IconUrl": "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/icon.png",
+    "Punchline": "观众自动点歌、主持人协作与队员节目单查看，支持樱花 TCP 隧道。",
+    "Changelog": "3.2.5.15：原 MidiBard 主窗口底部与自动点歌窗口顶部新增“联系作者”按钮，点击通过默认浏览器打开 https://shenhai.meoo.zone/ 。保留 3.2.5.14 的点歌载入修复和游戏队长自动接管。",
+    "AcceptsFeedback": false,
+    "DownloadLinkInstall": "https://github.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/releases/download/v3.2.5.15/MidiBard2.zip",
+    "DownloadLinkUpdate": "https://github.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/releases/download/v3.2.5.15/MidiBard2.zip"
+  }
+]

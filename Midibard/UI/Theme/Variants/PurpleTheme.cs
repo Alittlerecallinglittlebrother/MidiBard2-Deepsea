@@ -1,0 +1,62 @@
+using System.Numerics;
+
+namespace MidiBard;
+
+public class PurpleTheme : UITheme
+{
+    public Vector4 Text { get; init; } = new Vector4(1.00f, 1.00f, 1.00f, 1.00f);
+    public Vector4 TextDisabled { get; init; } = new Vector4(0.50f, 0.50f, 0.50f, 1.00f);
+    public Vector4 WindowBg { get; init; } = new Vector4(0.06f, 0.06f, 0.06f, 0.94f);
+    public Vector4 ChildBg { get; init; } = new Vector4(0.00f, 0.00f, 0.00f, 0.00f);
+    public Vector4 PopupBg { get; init; } = new Vector4(0.08f, 0.08f, 0.08f, 0.94f);
+    public Vector4 Border { get; init; } = new Vector4(0.43f, 0.43f, 0.50f, 0.50f);
+    public Vector4 BorderShadow { get; init; } = new Vector4(0.00f, 0.00f, 0.00f, 0.00f);
+    public Vector4 FrameBg { get; init; } = new Vector4(0.19f, 0.19f, 0.19f, 0.54f);
+    public Vector4 FrameBgHovered { get; init; } = new Vector4(0.60f, 0.26f, 0.98f, 0.40f);
+    public Vector4 FrameBgActive { get; init; } = new Vector4(0.60f, 0.26f, 0.98f, 0.67f);
+    public Vector4 TitleBg { get; init; } = new Vector4(0.04f, 0.04f, 0.04f, 1.00f);
+    public Vector4 TitleBgActive { get; init; } = new Vector4(0.31f, 0.16f, 0.48f, 1.00f);
+    public Vector4 TitleBgCollapsed { get; init; } = new Vector4(0.00f, 0.00f, 0.00f, 0.51f);
+    public Vector4 MenuBarBg { get; init; } = new Vector4(0.14f, 0.14f, 0.14f, 1.00f);
+    public Vector4 ScrollbarBg { get; init; } = new Vector4(0.02f, 0.02f, 0.02f, 0.53f);
+    public Vector4 ScrollbarGrab { get; init; } = new Vector4(0.31f, 0.31f, 0.31f, 1.00f);
+    public Vector4 ScrollbarGrabHovered { get; init; } = new Vector4(0.41f, 0.41f, 0.41f, 1.00f);
+    public Vector4 ScrollbarGrabActive { get; init; } = new Vector4(0.51f, 0.51f, 0.51f, 1.00f);
+    public Vector4 CheckMark { get; init; } = new Vector4(0.60f, 0.26f, 0.98f, 1.00f);
+    public Vector4 SliderGrab { get; init; } = new Vector4(0.54f, 0.24f, 0.88f, 1.00f);
+    public Vector4 SliderGrabActive { get; init; } = new Vector4(0.60f, 0.26f, 0.98f, 1.00f);
+    public Vector4 Button { get; init; } = new Vector4(0.60f, 0.26f, 0.98f, 0.40f);
+    public Vector4 ButtonHovered { get; init; } = new Vector4(0.60f, 0.26f, 0.98f, 1.00f);
+    public Vector4 ButtonActive { get; init; } = new Vector4(0.49f, 0.06f, 0.98f, 1.00f);
+    public Vector4 Header { get; init; } = new Vector4(0.60f, 0.26f, 0.98f, 0.31f);
+    public Vector4 HeaderHovered { get; init; } = new Vector4(0.60f, 0.26f, 0.98f, 0.80f);
+    public Vector4 HeaderActive { get; init; } = new Vector4(0.60f, 0.26f, 0.98f, 1.00f);
+    public Vector4 Separator { get; init; } = new Vector4(0.43f, 0.43f, 0.50f, 0.50f);
+    public Vector4 SeparatorHovered { get; init; } = new Vector4(0.41f, 0.10f, 0.75f, 0.78f);
+    public Vector4 SeparatorActive { get; init; } = new Vector4(0.41f, 0.10f, 0.75f, 1.00f);
+    public Vector4 ResizeGrip { get; init; } = new Vector4(0.60f, 0.26f, 0.98f, 0.20f);
+    public Vector4 ResizeGripHovered { get; init; } = new Vector4(0.60f, 0.26f, 0.98f, 0.67f);
+    public Vector4 ResizeGripActive { get; init; } = new Vector4(0.60f, 0.26f, 0.98f, 0.95f);
+    public Vector4 Tab { get; init; } = new Vector4(0.23f, 0.13f, 0.40f, 0.86f);
+    public Vector4 TabHovered { get; init; } = new Vector4(0.45f, 0.23f, 0.86f, 0.80f);
+    public Vector4 TabActive { get; init; } = new Vector4(0.30f, 0.17f, 0.76f, 1.00f);
+    public Vector4 TabUnfocused { get; init; } = new Vector4(0.07f, 0.10f, 0.15f, 0.97f);
+    public Vector4 TabUnfocusedActive { get; init; } = new Vector4(0.14f, 0.26f, 0.42f, 1.00f);
+    public Vector4 DockingPreview { get; init; } = new Vector4(0.60f, 0.26f, 0.98f, 0.70f);
+    public Vector4 DockingEmptyBg { get; init; } = new Vector4(0.20f, 0.20f, 0.20f, 1.00f);
+    public Vector4 PlotLines { get; init; } = new Vector4(0.61f, 0.61f, 0.61f, 1.00f);
+    public Vector4 PlotLinesHovered { get; init; } = new Vector4(1.00f, 0.43f, 0.35f, 1.00f);
+    public Vector4 PlotHistogram { get; init; } = new Vector4(0.90f, 0.70f, 0.00f, 1.00f);
+    public Vector4 PlotHistogramHovered { get; init; } = new Vector4(1.00f, 0.60f, 0.00f, 1.00f);
+    public Vector4 TableHeaderBg { get; init; } = new Vector4(0.19f, 0.19f, 0.20f, 1.00f);
+    public Vector4 TableBorderStrong { get; init; } = new Vector4(0.31f, 0.31f, 0.35f, 1.00f);
+    public Vector4 TableBorderLight { get; init; } = new Vector4(0.23f, 0.23f, 0.25f, 1.00f);
+    public Vector4 TableRowBg { get; init; } = new Vector4(0.00f, 0.00f, 0.00f, 0.00f);
+    public Vector4 TableRowBgAlt { get; init; } = new Vector4(1.00f, 1.00f, 1.00f, 0.06f);
+    public Vector4 TextSelectedBg { get; init; } = new Vector4(0.53f, 0.53f, 0.53f, 0.45f);
+    public Vector4 DragDropTarget { get; init; } = new Vector4(1.00f, 1.00f, 0.00f, 0.90f);
+    public Vector4 NavHighlight { get; init; } = new Vector4(0.8f, 0.3f, 0.4f, 1f);
+    public Vector4 NavWindowingHighlight { get; init; } = new Vector4(1.00f, 1.00f, 1.00f, 0.70f);
+    public Vector4 NavWindowingDimBg { get; init; } = new Vector4(0.80f, 0.80f, 0.80f, 0.20f);
+    public Vector4 ModalWindowDimBg { get; init; } = new Vector4(0.80f, 0.80f, 0.80f, 0.35f);
+}

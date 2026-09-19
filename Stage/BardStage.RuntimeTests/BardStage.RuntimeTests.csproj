@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UseWindowsForms>true</UseWindowsForms>
+    <DalamudLibPath Condition="'$(DalamudLibPath)' == '' and '$(DALAMUD_HOME)' != ''">$(DALAMUD_HOME)</DalamudLibPath>
+    <DalamudLibPath Condition="'$(DalamudLibPath)' == ''">$(APPDATA)\XIVLauncher\addon\Hooks\dev\</DalamudLibPath>
+    <DalamudLibPath Condition="!Exists('$(DalamudLibPath)') and Exists('$(APPDATA)\XIVLauncherCN\addon\Hooks\dev')">$(APPDATA)\XIVLauncherCN\addon\Hooks\dev\</DalamudLibPath>
+    <DalamudLibPath>$([MSBuild]::EnsureTrailingSlash('$(DalamudLibPath)'))</DalamudLibPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\BardStage.Core\BardStage.Core.csproj" />
+    <Compile Include="..\BardStage\StageController*.cs" Link="Production\%(Filename)%(Extension)" />
+    <Compile Include="..\BardStage\StageRoom.cs" Link="Production\StageRoom.cs" />
+    <Compile Include="..\BardStage\RoomPlaybackCoordinator.cs" Link="Production\RoomPlaybackCoordinator.cs" />
+    <Compile Include="..\BardStage\PlaybackObserver.cs" Link="Production\PlaybackObserver.cs" />
+    <Compile Include="..\BardStage\AutoQueuePlayer.cs" Link="Production\AutoQueuePlayer.cs" />
+    <Compile Include="..\BardStage\StagePlaybackIpc.cs" Link="Production\StagePlaybackIpc.cs" />
+    <Compile Include="..\BardStage\ChatRequestReceiver.cs" Link="Production\ChatRequestReceiver.cs" />
+    <Compile Include="..\BardStage\Windows\*.cs" Link="Production\%(Filename)%(Extension)" />
+    <Compile Include="..\..\Midibard\UI\MusicPlayer\Ensemble\EnsembleWindow.cs" Link="Production\EnsembleWindow.cs" />
+    <Reference Include="Dalamud;Dalamud.Bindings.ImGui;Dalamud.Bindings.ImPlot;Dalamud.Bindings.ImGuizmo;HexaGen.Runtime;Lumina;Lumina.Excel;Serilog;FFXIVClientStructs;InteropGenerator.Runtime">
+      <HintPath>$(DalamudLibPath)%(Identity).dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Content Include="$(DalamudLibPath)cimgui.dll" Link="cimgui.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

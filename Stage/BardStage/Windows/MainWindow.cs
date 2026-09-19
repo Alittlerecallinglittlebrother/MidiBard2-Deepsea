@@ -92,7 +92,8 @@ public sealed partial class MainWindow : Window, IDisposable
             + (!viewer ? TabWidth("曲库") : 0)
             + (controller.Room?.IsRemote != true ? TabWidth("更多") : 0)
             + (controller.Room != null ? TabWidth("演出房间") : 0);
-        var noticeWidth = ImGui.CalcTextSize(PluginNotice).X;
+        // Leave room for text measurement rounding at the right edge.
+        var noticeWidth = ImGui.CalcTextSize(PluginNotice).X + 4;
         var noticeInline = tabsWidth + style.ItemSpacing.X * 2 + noticeWidth <= availableWidth;
         if (ImGui.BeginTabBar("MainTabs"))
         {
@@ -173,10 +174,19 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private static void DrawPluginNotice()
     {
-        ImGui.PushStyleColor(ImGuiCol.Text, UiKit.Muted);
-        ImGui.TextWrapped(PluginNotice);
+        var font = ImGui.GetFont();
+        var fontSize = ImGui.GetFontSize();
+        var textSize = ImGui.CalcTextSizeA(font, fontSize, float.MaxValue, 0, PluginNotice, out _);
+        var availableWidth = Math.Max(0, ImGui.GetContentRegionAvail().X - 2);
+        var fit = Math.Min(1, availableWidth / Math.Max(1, textSize.X));
+        var position = ImGui.GetCursorScreenPos();
+        position.Y += (fontSize - textSize.Y * fit) / 2;
+        // Scale only this notice; draw-list text never inherits a wrapping position
+        // and leaves the font and scale of every following control unchanged.
+        if (fit > 0)
+            ImGui.GetWindowDrawList().AddText(font, fontSize * fit, position, ImGui.GetColorU32(UiKit.Muted), PluginNotice, 0);
+        ImGui.Dummy(new Vector2(MathF.Ceiling(textSize.X * fit), MathF.Ceiling(fontSize)));
         UiKit.RecordItem("pluginNotice");
-        ImGui.PopStyleColor();
     }
 
     private void DrawLibrary()

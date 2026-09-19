@@ -7,6 +7,12 @@ using Dalamud.Bindings.ImGui;
 using HexaGen.Runtime;
 using Melanchall.DryWetMidi.Core;
 
+if (args.Length == 2 && (args[0] == "--notice-check" || args[0] == "--notice-check-legacy"))
+{
+    RuntimeUi.RunNoticeChecks(Path.GetFullPath(args[1]), args[0] == "--notice-check-legacy");
+    return;
+}
+
 if (args.Length == 2 && args[0] == "--library-check")
 {
     var work = Path.Combine(Path.GetTempPath(), "BardStage-library-" + Guid.NewGuid().ToString("N"));

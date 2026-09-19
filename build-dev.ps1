@@ -1,5 +1,5 @@
 param(
-    [string]$Destination = (Join-Path $env:APPDATA 'XIVLauncherCN/devPlugins/MidiBard2-Deepsea-3.2.5.19'),
+    [string]$Destination = (Join-Path $env:APPDATA 'XIVLauncherCN/devPlugins/MidiBard2-Deepsea-3.2.5.20'),
     [string]$DalamudLibPath = (Join-Path $env:APPDATA 'XIVLauncherCN/addon/Hooks/dev')
 )
 $ErrorActionPreference = 'Stop'

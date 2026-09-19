@@ -70,12 +70,6 @@ public static class FilePlayback
             }
             return;
         }
-        if (sender is BardPlayback { IsContinuityEnsemble: true } ensemblePlayback)
-        {
-            var index = PlaylistManager.FilePathList.FindIndex(s => string.Equals(s.FilePath, ensemblePlayback.FilePath, StringComparison.OrdinalIgnoreCase));
-            PlaylistManager.ChangeSongPlayedStatusLocal(index, true);
-            return;
-        }
         Task.Run(() =>
         {
             try
@@ -139,7 +133,6 @@ public static class FilePlayback
 
         var playback = await Task.Run(() => GetPlaybackInstance(midiFile, filePath), cancellationToken);
         if (cancellationToken.IsCancellationRequested) { playback.Dispose(); cancellationToken.ThrowIfCancellationRequested(); }
-        global::MidiBard.Managers.EnsembleContinuity.Cancel();
         MidiBard.CurrentPlayback?.Dispose();
         MidiBard.CurrentPlayback = playback;
         MidiBard.Stage?.Attach(playback, filePath);
@@ -181,7 +174,6 @@ public static class FilePlayback
         }
 
         var playback = await Task.Run(() => GetPlaybackInstance(midiFile, null));
-        global::MidiBard.Managers.EnsembleContinuity.Cancel();
         MidiBard.CurrentPlayback?.Dispose();
         MidiBard.CurrentPlayback = playback;
         MidiBard.Stage?.Attach(playback, null);

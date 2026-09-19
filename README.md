@@ -1,10 +1,12 @@
 # midibard2-深海回响特供版
 
-**3.2.5.16 正式版**新增默认关闭的“演奏中换乐器”开关。启用方法、原生合奏状态的区别及实机验收步骤见 [演奏中换乐器](LIVE-INSTRUMENT-SWITCH.md)。
-
 FF14 / 卫月（Dalamud CN）演奏插件，基于 [reckhou/MidiBard2](https://github.com/reckhou/MidiBard2) 的 `v3-api15-stable` 分支开发。本仓库维护深海回响定制版源码、安装索引及版本发布。
 
-当前版本 **3.2.5.16**，Dalamud API 15，Windows x64 / .NET 10。作者署名：akira0245, Ori, Kalle, Zune, 断水剑。
+当前版本 **3.2.5.17**，Dalamud API 15，Windows x64 / .NET 10。作者署名：akira0245, Ori, Kalle, Zune, 断水剑, SevenCat。
+
+2026-09-19：发布 **3.2.5.17**，演奏逻辑恢复至 3.2.5.15，移除 3.2.5.16 新增的演奏中换乐器功能，并在断水剑后新增 SevenCat 署名。自动点歌、自动分配、主持人协作、队长接管和联系作者功能保留。
+
+已安装 3.2.5.16 或更早版本的用户，刷新卫月插件仓库后可直接更新至 **3.2.5.17**。开发插件用户请停用旧版，完整解压 [3.2.5.17 安装包](https://github.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/releases/download/v3.2.5.17/MidiBard2.zip)，重新指定其中的 `MidiBard2.dll`。不要同时启用多个版本。
 
 ## 安装
 
@@ -26,17 +28,16 @@ https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepse
 - 主持人无需入队，可通过共享房间查看和调整队列；普通队员使用查看邀请。
 - 转让游戏队长时接管演奏权限，保留房间、主持人连接和队列。原房主仍须在线、留在同一小队并保持樱花隧道运行。
 - 节目单、演出记录及导出；主窗口和自动点歌窗口提供“联系作者”按钮。
-- 演奏中换乐器：保持 MIDI 时钟，换乐器声部暂时静音并在下一可用小节恢复。全队须提前启用，退出原生合奏后使用插件停止按钮结束演出。
 
 全队需预先备齐相同 MIDI，演出房间不传输歌曲文件。多设备合奏须开启 PMD 和合奏监听，候任队长须提前加入原房间。详见 [使用说明](STAGE-README.md)、[演出房间与自动接管](STAGE-ROOM.md) 和 [状态接口](STAGE-IPC.md)。
 
 ![自动点歌与联系作者入口](docs/images/queue.png)
 
-## 3.2.5.16 更新
+## 3.2.5.17 更新
 
-新增“演奏中换乐器”，支持按 MIDI 拍号和变速信息选择恢复的小节。换乐器失败时当前声部保持静音并允许重试，停止、换歌、退队与登出会取消旧动作。保留自动点歌、队长接管及“联系作者”功能。
+移除演奏中换乐器的开关、时钟保持、静音续奏和小节恢复逻辑，恢复 3.2.5.15 的演奏行为。作者列表更新为 akira0245, Ori, Kalle, Zune, 断水剑, SevenCat。
 
-249 项核心测试、40 项换乐器专项及自动分配、小队播放、房间接管和原生 ImGui 回归检查通过。游戏内八人换乐器效果和樱花公网接管仍待验收；本功能不保证保留原生合奏成员状态。详见 [验证记录](STAGE-VERIFICATION.md)。
+249 项核心测试及本地 Release 构建通过。C# 源码与原始 3.2.5.15 一致；本次未在游戏内加载验证。详见 [验证记录](STAGE-VERIFICATION.md)。
 
 ## 构建
 

@@ -78,7 +78,7 @@ public partial class PluginUI
 
         DrawTimeLabels(currentTime, duration);
 
-        if (MidiBard.AgentMetronome.EnsembleModeRunning || Managers.EnsembleContinuity.IsActive)
+        if (MidiBard.AgentMetronome.EnsembleModeRunning)
         {
             DrawEnsembleLabel();
         }

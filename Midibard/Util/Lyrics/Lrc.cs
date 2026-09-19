@@ -296,7 +296,7 @@ public class Lrc
             }
 
             var chatComand = MidiBard.config.GetChatCommand(MidiBard.config.LyricsChatTarget);
-            var ensembleRunning = MidiBard.AgentMetronome.EnsembleModeRunning || Managers.EnsembleContinuity.IsActive;
+            var ensembleRunning = MidiBard.AgentMetronome.EnsembleModeRunning;
             var playingLrc = PlayingLrc;
 
             // post song info at the beginning

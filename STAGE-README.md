@@ -1,8 +1,8 @@
 # midibard2-深海回响特供版
 
-当前版本：**3.2.5.16 正式版**。新增默认关闭的“演奏中换乐器”；启用前阅读 [LIVE-INSTRUMENT-SWITCH.md](LIVE-INSTRUMENT-SWITCH.md)。独立开发入口为 `%APPDATA%/XIVLauncherCN/devPlugins/MidiBard2-Deepsea-v0.12/MidiBard2.dll`，在线订阅见 [README.md](README.md)。
+版本 `3.2.5.17`，Dalamud API 15，Windows x64 / .NET 10。作者：akira0245, Ori, Kalle, Zune, 断水剑, SevenCat。基于 `reckhou/MidiBard2` 的 `v3-api15-stable`，提交 `d8d1bd4454604cc837affd593fc3b982f33433e7`。这是深海回响定制分支，不含 OBS 联动。
 
-版本 `3.2.5.16`（v0.12），Dalamud API 15，Windows x64 / .NET 10。作者：akira0245, Ori, Kalle, Zune, 断水剑。基于 `reckhou/MidiBard2` 的 `v3-api15-stable`，提交 `d8d1bd4454604cc837affd593fc3b982f33433e7`。这是深海回响定制分支，不含 OBS 联动。
+2026-09-19：3.2.5.17 恢复 3.2.5.15 的演奏逻辑，移除演奏中换乐器功能并补充 SevenCat 署名。已安装 3.2.5.16 的用户可直接更新，步骤见 [安装说明](README.md)。
 
 本版重新整理播放控制、拖动排序和共享曲库，并按音轨名字及队长的小队显示顺序自动安排合奏。欢迎语音及其资源、依赖和设置页已移除。旧版原始音频不受影响。
 
@@ -48,7 +48,7 @@ v0.11.3 在原 MidiBard 主窗口底部与自动点歌窗口顶部增加“联�
 - 优先按音轨名称识别乐器，例如 `萨克斯`、`Sax`、`钢琴`、`Piano`、`F-ShuangHuangGuan`。未识别时依次使用已有有效乐器配置、MIDI Program Change，最后回退竖琴。音轨名称不明确时请先检查结果。
 - 保留可匹配的既有移调、速度等配置。关闭自动分配后可继续使用原有手动配置流程。自动点歌的单人模式不会套用小队分轨。
 
-全队使用 `3.2.5.15`，开启合奏监听。同机多开开启客户端同步；不同电脑开启原 MidiBard 多设备演奏（PMD）。各端预先备好相同 MIDI，演出房间不传 MIDI。多设备模式按文件 SHA256 选曲，允许播放列表顺序不同；同机 IPC 同步仍应使用同序播放列表。队长在自动点歌中选择“合奏主控”，插件载入、分配轨道、切换乐器后发起原有准备确认。
+全队使用 `3.2.5.17`，开启合奏监听。同机多开开启客户端同步；不同电脑开启原 MidiBard 多设备演奏（PMD）。各端预先备好相同 MIDI，演出房间不传 MIDI。多设备模式按文件 SHA256 选曲，允许播放列表顺序不同；同机 IPC 同步仍应使用同序播放列表。队长在自动点歌中选择“合奏主控”，插件载入、分配轨道、切换乐器后发起原有准备确认。
 
 多设备载入时队长直接读取本机文件，并等待每位队员确认载入。缺曲或读取失败会指出具体队员；超过 30 秒没有回执会列出未回应队员，取消本次推进，歌曲保留待演。旧版本不会发送新回执，因此必须全队升级。确认曲库和版本后重新点击播放，不会自动跳过失败歌曲。
 
@@ -82,7 +82,7 @@ v0.11.3 在原 MidiBard 主窗口底部与自动点歌窗口顶部增加“联�
 
 独立仓库：https://github.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea 。卫月自定义插件仓库地址：https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/repo.json 。在线安装和源码下载步骤见 [README.md](README.md)。使用本地开发版时，先停用原版或旧版插件，再在卫月开发插件中添加：
 
-`%APPDATA%/XIVLauncherCN/devPlugins/MidiBard2-Deepsea-v0.11.3/MidiBard2.dll`
+`%APPDATA%/XIVLauncherCN/devPlugins/MidiBard2-Deepsea-3.2.5.17/MidiBard2.dll`
 
 本版与原 MidiBard2 共用内部标识和配置路径，不能同时启用多个版本。升级前备份配置；旧版开发目录保留。GitHub Release 提供对应源码 `MidiBard2-source.zip`。`MidiBard.Stage.dll` 和 `BardStage.Core.dll` 是依赖，不是独立插件入口。
 

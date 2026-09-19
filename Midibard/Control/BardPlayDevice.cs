@@ -42,7 +42,6 @@ public class BardPlayDevice : IOutputDevice
     }
     private readonly MidiClock PlaybackTicker;
     private readonly List<(MidiEvent, MidiPlaybackMetaData)>[] MidiEventsBuffer;
-    private readonly object playbackBufferLock = new();
     const int BufferLength = 500;
 
     public BardPlayDevice()
@@ -65,51 +64,34 @@ public class BardPlayDevice : IOutputDevice
 
     private void PlaybackTickerTicked(object sender, EventArgs e)
     {
-        lock (playbackBufferLock)
+        if (IsDisposed) return;
+        try
         {
-            if (IsDisposed) return;
-            try
+            foreach (var (midiEvent, (trackIndex, time, eventValue)) in NotesCurrentTick.OrderBy(i => i.Item2.EventValueTransposed))
             {
-                foreach (var (midiEvent, (trackIndex, time, eventValue)) in NotesCurrentTick.OrderBy(i => i.Item2.EventValueTransposed))
+                try
                 {
-                    try
-                    {
-                        //Actually Play event
-                        // PluginLog.Verbose($"[MidiClockTick] buffer: {CurrentBufferIndex} remain: {NotesCurrentTick.Count} {midiEvent} T{trackIndex}");
-                        if (MidiBard.AgentPerformance.InPerformanceMode
-                            && (midiEvent is not NoteEvent || EnsembleContinuity.Allows(time)))
-                            PlayMidiEvent(midiEvent, trackIndex, false);
-                    }
-                    catch (Exception exception)
-                    {
-                        PluginLog.Error(exception, "exception in dequeue tick method");
-                    }
+                    //Actually Play event
+                    // PluginLog.Verbose($"[MidiClockTick] buffer: {CurrentBufferIndex} remain: {NotesCurrentTick.Count} {midiEvent} T{trackIndex}");
+                    PlayMidiEvent(midiEvent, trackIndex, false);
+                }
+                catch (Exception exception)
+                {
+                    PluginLog.Error(exception, "exception in dequeue tick method");
                 }
             }
-            catch (Exception exception)
-            {
-                PluginLog.Error(exception, "error when dequeuing midi event");
-            }
-
-            NotesCurrentTick.Clear();
-
-            CurrentBufferIndex++;
-            if (CurrentBufferIndex >= BufferLength)
-            {
-                CurrentBufferIndex = 0;
-            }
         }
-    }
-
-    internal unsafe void ClearPlaybackNotes()
-    {
-        lock (playbackBufferLock)
+        catch (Exception exception)
         {
-            foreach (var buffer in MidiEventsBuffer) buffer.Clear();
-            lastnoteon = (new MidiPlaybackMetaData(-1, -1, -1), 0);
-            if (IsDisposed || !MidiBard.AgentPerformance.InPerformanceMode) return;
-            var note = AgentPerformance.Instance.Struct->CurrentPressingNote - 39;
-            if (note is >= 0 and <= 36) KeyUp(note);
+            PluginLog.Error(exception, "error when dequeuing midi event");
+        }
+
+        NotesCurrentTick.Clear();
+
+        CurrentBufferIndex++;
+        if (CurrentBufferIndex >= BufferLength)
+        {
+            CurrentBufferIndex = 0;
         }
     }
 
@@ -127,46 +109,42 @@ public class BardPlayDevice : IOutputDevice
     private (MidiPlaybackMetaData metadata, int delayms) lastnoteon = (new MidiPlaybackMetaData(-1, -1, -1), 0);
     public void QueuePlaybackMidiEvent(MidiEvent midiEvent, MidiPlaybackMetaData metadata)
     {
-        lock (playbackBufferLock)
+        var trackIndex = metadata.TrackIndex;
+
+        int delayMs;
+        if (midiEvent is not NoteEvent noteEvent)
         {
-            if (midiEvent is NoteEvent && !EnsembleContinuity.Allows(metadata.Time)) return;
-            var trackIndex = metadata.TrackIndex;
-
-            int delayMs;
-            if (midiEvent is not NoteEvent noteEvent)
-            {
-                delayMs = EnsembleManager.GetCompensationNew(MidiBard.CurrentInstrumentWithTone, -1);
-            }
-            else
-            {
-                delayMs = EnsembleManager.GetCompensationNew(MidiBard.CurrentInstrumentWithTone, GetNoteNumberTranslatedByTrack(noteEvent.NoteNumber, trackIndex));
-
-                if (midiEvent is NoteOnEvent noteOn)
-                {
-                    //same track and same time
-                    if (metadata.TrackIndex == lastnoteon.metadata.TrackIndex && metadata.Time == lastnoteon.metadata.Time)
-                    {
-                        var eventValueTransposed = metadata.EventValueTransposed;
-                        var lastEventValueTransposed = lastnoteon.metadata.EventValueTransposed;
-                        PluginLog.Debug($"chord note t{metadata.Time,6}/{lastnoteon.metadata.Time,-6} noteNumber:{noteOn.NoteNumber} delay:{delayMs}/{lastnoteon.delayms} eventValue:{eventValueTransposed}/{lastEventValueTransposed}");
-                        //new note delay is > previous delay
-                        if (delayMs < lastnoteon.delayms && eventValueTransposed > lastEventValueTransposed
-                            || delayMs > lastnoteon.delayms && eventValueTransposed < lastEventValueTransposed)
-                        {
-                            //new note is lower than previous note
-                            PluginLog.Warning($"correct delayms from {delayMs} -> {lastnoteon.delayms}");
-                            delayMs = lastnoteon.delayms;
-                        }
-                    }
-                    lastnoteon = (metadata, delayMs);
-                }
-            }
-
-            var delayedBufferIndex = (CurrentBufferIndex + delayMs + 1) % BufferLength;
-
-            // PluginLog.Verbose($"[enqueue] ti{metadata.Time} dt{midiEvent.DeltaTime} event {midiEvent} to: {CurrentBufferIndex}+{delayMs}={delayedBufferIndex} ({EnsembleManager.CompensationMax - delayMs})");
-            MidiEventsBuffer[delayedBufferIndex].Add((midiEvent, metadata));
+            delayMs = EnsembleManager.GetCompensationNew(MidiBard.CurrentInstrumentWithTone, -1);
         }
+        else
+        {
+            delayMs = EnsembleManager.GetCompensationNew(MidiBard.CurrentInstrumentWithTone, GetNoteNumberTranslatedByTrack(noteEvent.NoteNumber, trackIndex));
+
+            if (midiEvent is NoteOnEvent noteOn)
+            {
+                //same track and same time
+                if (metadata.TrackIndex == lastnoteon.metadata.TrackIndex && metadata.Time == lastnoteon.metadata.Time)
+                {
+                    var eventValueTransposed = metadata.EventValueTransposed;
+                    var lastEventValueTransposed = lastnoteon.metadata.EventValueTransposed;
+                    PluginLog.Debug($"chord note t{metadata.Time,6}/{lastnoteon.metadata.Time,-6} noteNumber:{noteOn.NoteNumber} delay:{delayMs}/{lastnoteon.delayms} eventValue:{eventValueTransposed}/{lastEventValueTransposed}");
+                    //new note delay is > previous delay
+                    if (delayMs < lastnoteon.delayms && eventValueTransposed > lastEventValueTransposed
+                        || delayMs > lastnoteon.delayms && eventValueTransposed < lastEventValueTransposed)
+                    {
+                        //new note is lower than previous note
+                        PluginLog.Warning($"correct delayms from {delayMs} -> {lastnoteon.delayms}");
+                        delayMs = lastnoteon.delayms;
+                    }
+                }
+                lastnoteon = (metadata, delayMs);
+            }
+        }
+
+        var delayedBufferIndex = (CurrentBufferIndex + delayMs + 1) % BufferLength;
+
+        // PluginLog.Verbose($"[enqueue] ti{metadata.Time} dt{midiEvent.DeltaTime} event {midiEvent} to: {CurrentBufferIndex}+{delayMs}={delayedBufferIndex} ({EnsembleManager.CompensationMax - delayMs})");
+        MidiEventsBuffer[delayedBufferIndex].Add((midiEvent, metadata));
     }
 
     private struct ChannelState
@@ -217,7 +195,6 @@ public class BardPlayDevice : IOutputDevice
             case MidiPlaybackMetaData midiPlaybackMeta:
                 {
                     if (MidiBard.CurrentPlayback?.TrackInfos[midiPlaybackMeta.TrackIndex].IsPlaying != true) return;
-                    if (midiEvent is NoteEvent && !EnsembleContinuity.Allows(midiPlaybackMeta.Time)) return;
                     if (EnsembleManager.EnsembleRunning)
                     {
                         QueuePlaybackMidiEvent(midiEvent, midiPlaybackMeta);
@@ -233,7 +210,6 @@ public class BardPlayDevice : IOutputDevice
     private unsafe bool PlayMidiEvent(MidiEvent midiEvent, int trackIndex, bool isDevice)
     {
         if (IsDisposed) return false;
-        if (isDevice && EnsembleContinuity.IsActive) return false;
 
         switch (midiEvent)
         {
@@ -249,11 +225,7 @@ public class BardPlayDevice : IOutputDevice
 
                 if (MidiBard.PlayingGuitar)
                 {
-                    if (EnsembleContinuity.GuitarTone is { } liveTone)
-                    {
-                        Playlib.GuitarSwitchTone(liveTone);
-                    }
-                    else if ((MidiBard.CurrentPlayback != null) && (bool)(MidiBard.CurrentPlayback?.TrackInfos[trackIndex].IsProgramElectricGuitar) && MidiBard.config.GuitarToneMode == GuitarToneMode.ProgramElectricGuitarMode)
+                    if ((MidiBard.CurrentPlayback != null) && (bool)(MidiBard.CurrentPlayback?.TrackInfos[trackIndex].IsProgramElectricGuitar) && MidiBard.config.GuitarToneMode == GuitarToneMode.ProgramElectricGuitarMode)
                     {
                         ApplyToneByChannel(noteEvent.Channel);
                     }

@@ -34,16 +34,10 @@ namespace MidiBard.Control.CharacterControl;
 
 internal static class SwitchInstrument
 {
-    private static bool switchingInstrument;
-    public static bool SwitchingInstrument
-    {
-        get => switchingInstrument || Managers.EnsembleContinuity.IsSwitching;
-        private set => switchingInstrument = value;
-    }
+    public static bool SwitchingInstrument { get; private set; }
 
     public static void SwitchToContinue(uint instrumentId)
     {
-        if (Managers.EnsembleContinuity.RequestSwitch(instrumentId)) return;
         Task.Run(async () =>
         {
             try

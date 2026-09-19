@@ -34,14 +34,8 @@ static class PerformActions
         _doPerformAction(Offsets.PerformanceStructPtr, instrumentId);
     }
 
-    public static void DoPerformActionOnTick(uint instrumentId, Func<bool> isCurrent = null, Func<bool> switchGuitarTone = null)
+    public static void DoPerformActionOnTick(uint instrumentId)
     {
-        api.Framework.RunOnTick(() =>
-        {
-            if (isCurrent?.Invoke() == false) return;
-            if (switchGuitarTone?.Invoke() == true)
-                Midibard.Playlib.Playlib.GuitarSwitchTone(MidiBard.Instruments[instrumentId].GuitarTone);
-            else DoPerformAction(instrumentId);
-        });
+        api.Framework.RunOnTick(() => DoPerformAction(instrumentId));
     }
 }

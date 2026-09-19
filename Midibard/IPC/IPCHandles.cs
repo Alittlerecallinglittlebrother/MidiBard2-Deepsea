@@ -225,8 +225,8 @@ static class IPCHandles
         var takeout = message.DataStruct<bool>();
         if (!takeout)
         {
+            SwitchInstrument.SwitchToContinue(0);
             MidiPlayerControl.Stop();
-            _ = SwitchInstrument.SwitchToAsync(0);
             return;
         }
 
@@ -305,7 +305,6 @@ static class IPCHandles
         var jsonDeserialize = str.JsonDeserialize<Configuration>();
         //do not overwrite track settings
         jsonDeserialize.TrackStatus = MidiBard.config.TrackStatus;
-        jsonDeserialize.ExperimentalLiveInstrumentSwitch = MidiBard.config.ExperimentalLiveInstrumentSwitch;
         MidiBard.config = jsonDeserialize;
 
         ThemeManager.SetTheme(MidiBard.config.CurrentTheme);

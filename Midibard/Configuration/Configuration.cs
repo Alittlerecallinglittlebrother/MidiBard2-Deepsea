@@ -70,7 +70,6 @@ public class Configuration : IPluginConfiguration
     public bool autoTransposeBySongName = true;
     public bool bmpTrackNames = true;
     public bool StopPlayingWhenEnsembleEnds = true;
-    public bool ExperimentalLiveInstrumentSwitch = false;
     public bool SyncClients = true;
     public bool AutoSetOffAFKSwitchingTime = true;
     public float EnsembleIndicatorDelay = -4;

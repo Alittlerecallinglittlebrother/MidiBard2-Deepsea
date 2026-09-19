@@ -16,8 +16,6 @@ if (-not $SkipChecks) {
     if ($LASTEXITCODE -ne 0) { throw 'Automatic assignment checks failed.' }
     dotnet run --project (Join-Path $PSScriptRoot 'Stage/BardStage.PartyPlaybackTests/BardStage.PartyPlaybackTests.csproj') @runOptions
     if ($LASTEXITCODE -ne 0) { throw 'Party playback checks failed.' }
-    dotnet run --project (Join-Path $PSScriptRoot 'Stage/BardStage.LiveSwitchTests/BardStage.LiveSwitchTests.csproj') @runOptions
-    if ($LASTEXITCODE -ne 0) { throw 'Live instrument switch checks failed.' }
 }
 dotnet build (Join-Path $PSScriptRoot 'Midibard/MidiBard2.csproj') @buildOptions
 if ($LASTEXITCODE -ne 0) { throw 'Integrated plugin build failed.' }

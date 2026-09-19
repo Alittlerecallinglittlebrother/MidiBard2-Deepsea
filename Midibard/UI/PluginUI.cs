@@ -96,7 +96,7 @@ public partial class PluginUI
         // var ensemblePreparing = AgentMetronome.MetronomeBeatsElapsed < 0;
         try
         {
-            var ensembleRunning = MidiBard.AgentMetronome.EnsembleModeRunning || Managers.EnsembleContinuity.IsActive;
+            var ensembleRunning = MidiBard.AgentMetronome.EnsembleModeRunning;
             var playerName = api.Player.CharacterName;
             var playerWorld = api.Player.HomeWorld.ValueNullable?.Name.ToDalamudString().TextValue ?? "";
             var playerInfo = MidiBard.config.hidePlayerInformationFromUi ? "" : $"{playerName}@{playerWorld}";
@@ -124,7 +124,6 @@ public partial class PluginUI
                 DrawPlaylist();
 
                 DrawCurrentPlaying();
-                if (Managers.EnsembleContinuity.IsActive) ImGui.TextWrapped(Managers.EnsembleContinuity.Status);
 
                 ImGui.Spacing();
 

@@ -9,6 +9,8 @@
   <ItemGroup>
     <Compile Include="../../Midibard/Util/PartyChatCommand*.cs" Link="Production/%(Filename)%(Extension)" />
     <Compile Include="../../Midibard/Managers/PartySongLoad.cs" Link="Production/PartySongLoad.cs" />
+    <Compile Include="../../Midibard/Managers/DistributedEnsembleAssignment.cs" Link="Production/DistributedEnsembleAssignment.cs" />
+    <Compile Include="../BardStage.Core/Rooms/RoomSongPlan.cs" Link="Production/RoomSongPlan.cs" />
     <Compile Include="../../Midibard/StageIntegration/MidiBardQueuePort.cs" Link="Production/MidiBardQueuePort.cs" />
     <Reference Include="Dalamud;Lumina;Lumina.Excel;FFXIVClientStructs;InteropGenerator.Runtime">
       <HintPath>$(DalamudLibPath)%(Identity).dll</HintPath>

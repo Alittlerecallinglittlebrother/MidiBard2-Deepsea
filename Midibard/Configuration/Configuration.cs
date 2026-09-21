@@ -89,6 +89,9 @@ public class Configuration : IPluginConfiguration
     public bool playOnMultipleDevices = false;
     public bool useChatPlaylistSync = false;
     public bool usingFileSharingServices = true;
+    // Optional local-room transfer.  It is off by default so existing PMD
+    // users retain the historical requirement to prepare files themselves.
+    public bool EnableCrossComputerSongSync = false;
     public bool lockTracks = false;
 
     // Lyrics

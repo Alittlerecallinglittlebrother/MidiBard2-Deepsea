@@ -446,6 +446,27 @@ static partial class PlaylistManager
         return loaded;
     }
 
+    internal static async Task<bool> LoadExternalPlayback(string path, CancellationToken cancellationToken)
+    {
+        Interlocked.Increment(ref pendingLoads);
+        var entered = false;
+        try
+        {
+            await loadGate.WaitAsync(cancellationToken);
+            entered = true;
+            LastLoadSucceeded = false;
+            cancellationToken.ThrowIfCancellationRequested();
+            // The cache is not a playlist. No import, IPC playlist broadcast or save.
+            CurrentSongIndex = -1;
+            return LastLoadSucceeded = await FilePlayback.LoadPlayback(path, cancellationToken);
+        }
+        finally
+        {
+            if (entered) loadGate.Release();
+            Interlocked.Decrement(ref pendingLoads);
+        }
+    }
+
     public static async Task<bool> LoadPlayback(int? index = null, bool startPlaying = false, bool sync = true, CancellationToken cancellationToken = default)
     {
         // if (index < 0 || index >= FilePathList.Count)

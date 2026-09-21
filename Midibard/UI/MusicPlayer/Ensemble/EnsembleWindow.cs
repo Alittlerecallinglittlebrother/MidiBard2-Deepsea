@@ -33,6 +33,9 @@ namespace MidiBard;
 public partial class PluginUI
 {
     private bool ShowEnsembleWindow;
+#nullable enable
+    internal static Action<string, Vector2, Vector2>? EnsembleItemBounds { get; set; }
+#nullable restore
 
     private void DrawEnsembleWindow()
     {
@@ -50,28 +53,37 @@ public partial class PluginUI
         {
             // fixed header
             // float headerStartY = ImGui.GetCursorPosY();
-            ImGui.BeginChild("##EnsembleControlMenuFixedHeight", ImGuiHelpers.ScaledVector2(-1, 40), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+            var toolbarHeight = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.Y * 2;
+            if (PartyChatCommand.EnsembleLoadIssue is { } loadIssue)
+                toolbarHeight += ImGui.CalcTextSize(loadIssue, false, Math.Max(1, ImGui.GetContentRegionAvail().X)).Y + ImGui.GetStyle().ItemSpacing.Y;
+            ImGui.BeginChild("##EnsembleControlMenuFixedHeight", new Vector2(-1, toolbarHeight), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
             DrawEnsembleControlMenu();
             ImGui.EndChild();
 
             ImGui.Separator();
 
             var playback = MidiBard.CurrentPlayback;
-            var loading = PlaylistManager.IsLoading;
+            var loading = PartyChatCommand.IsLoading;
             ImGui.BeginDisabled(loading || playback?.IsSoloPlayback == true || MidiBard.IsPlaying || MidiBard.AgentMetronome.EnsembleModeRunning);
             if (ImGui.Checkbox("自动分配乐器与演奏人", ref MidiBard.config.AutoAssignEnsembleTracks))
             {
-                if (playback is { } loaded)
+                try
                 {
-                    if (MidiBard.config.AutoAssignEnsembleTracks)
-                        loaded.MidiFileConfig = AutomaticEnsembleAssignment.Create(loaded.TrackInfos,
-                            MidiFileConfigManager.GetMidiConfigFromFile(loaded.FilePath));
-                    else if (loaded.MidiFileConfig is { } current)
-                        current.AutomaticallyAssigned = false;
-                    loaded.SyncTrackStatusWithMidiFileConfig();
-                    if (!MidiBard.config.playOnMultipleDevices && loaded.MidiFileConfig is { } currentConfig)
-                        IPCHandles.UpdateMidiFileConfig(currentConfig);
+                    PartyChatCommand.InvalidateAssignment();
+                    if (playback is { } loaded)
+                    {
+                        if (MidiBard.config.AutoAssignEnsembleTracks)
+                            loaded.MidiFileConfig = AutomaticEnsembleAssignment.Create(loaded.TrackInfos,
+                                MidiFileConfigManager.GetMidiConfigFromFile(loaded.FilePath));
+                        else
+                            loaded.MidiFileConfig = DistributedEnsembleAssignment.CreateDraft(loaded.TrackInfos,
+                                loaded.MidiFileConfig ?? MidiFileConfigManager.GetMidiConfigFromFile(loaded.FilePath));
+                        loaded.SyncTrackStatusWithMidiFileConfig();
+                        if (!MidiBard.config.playOnMultipleDevices && loaded.MidiFileConfig is { } currentConfig)
+                            IPCHandles.UpdateMidiFileConfig(currentConfig);
+                    }
                 }
+                catch (Exception ex) { api.ChatGui.PrintError("[MidiBard] " + ex.Message); }
                 MidiBard.SaveConfig();
                 if (!MidiBard.config.playOnMultipleDevices) IPCHandles.SyncAllSettings();
             }
@@ -85,11 +97,25 @@ public partial class PluginUI
 
             ImGui.BeginChild("##EnsembleScrollableContent", new Vector2(-1, 0), false, ImGuiWindowFlags.HorizontalScrollbar);
 
+            if (PartyChatCommand.ManualDistributionMode)
+            {
+                ImGui.TextWrapped("手动分配：指定每轨的演奏人、乐器和移调，再统一下发。队员会使用本次分配，无需调整自己的自动分配开关。");
+                ImGui.BeginDisabled(loading || playback?.MidiFileConfig == null || playback.IsSoloPlayback
+                    || MidiBard.IsPlaying || MidiBard.AgentMetronome.EnsembleModeRunning);
+                if (ImGui.Button("下发歌曲与手动分配", new Vector2(-1, 0))) PartyChatCommand.SendManualAssignment();
+                EnsembleItemBounds?.Invoke("manualDistribute", ImGui.GetItemRectMin(), ImGui.GetItemRectMax());
+                ImGui.EndDisabled();
+                if (!string.IsNullOrEmpty(PartyChatCommand.ManualDistributionStatus))
+                    ImGui.TextWrapped(PartyChatCommand.ManualDistributionStatus);
+                ImGui.Separator();
+            }
+
             if (loading)
             {
                 ImGui.TextUnformatted("正在载入曲目...");
             }
-            else if (!MidiBard.config.AutoAssignEnsembleTracks && MidiBard.config.playOnMultipleDevices && !MidiBard.config.usingFileSharingServices)
+            else if (!MidiBard.config.AutoAssignEnsembleTracks && MidiBard.config.playOnMultipleDevices
+                && !MidiBard.config.usingFileSharingServices && !PartyChatCommand.ManualDistributionMode)
             {
                 ImGui.Button($"You are NOT using file sharing services to sync settings.\nTrack assign is disabled.\nPlease choose the tracks on clients individually.", new Vector2(-1, 100));
             }
@@ -136,13 +162,14 @@ public partial class PluginUI
                         .Select(partyMember => partyMember.Cid != 0 ? $"{partyMember.Name}·{partyMember.World}" : "")
                         .ToArray();
 
-                    ImGui.BeginDisabled(fileConfig.AutomaticallyAssigned);
+                    ImGui.BeginDisabled(fileConfig.AutomaticallyAssigned || loading || MidiBard.IsPlaying || MidiBard.AgentMetronome.EnsembleModeRunning);
                     if (ImGui.BeginTable("fileConfig.Tracks", 4, ImGuiTableFlags.SizingFixedFit))
                     {
-                        ImGui.TableSetupColumn("checkbox", ImGuiTableColumnFlags.WidthStretch, 1);
-                        ImGui.TableSetupColumn("instrument", ImGuiTableColumnFlags.WidthFixed);
-                        ImGui.TableSetupColumn("transpose", ImGuiTableColumnFlags.WidthFixed);
-                        ImGui.TableSetupColumn("playername", ImGuiTableColumnFlags.WidthStretch, 1.2f);
+                        ImGui.TableSetupColumn("轨道", ImGuiTableColumnFlags.WidthStretch, 1);
+                        ImGui.TableSetupColumn("乐器", ImGuiTableColumnFlags.WidthFixed);
+                        ImGui.TableSetupColumn("移调", ImGuiTableColumnFlags.WidthFixed);
+                        ImGui.TableSetupColumn("演奏人", ImGuiTableColumnFlags.WidthStretch, 1.2f);
+                        ImGui.TableHeadersRow();
 
                         var id = 125687;
                         foreach (var dbTrack in fileConfig.Tracks)
@@ -235,8 +262,11 @@ public partial class PluginUI
 
                     if (changed)
                     {
+                        PartyChatCommand.InvalidateAssignment();
+                        fileConfig.LeaderDistributed = false;
+                        playback.SyncTrackStatusWithMidiFileConfig();
                         fileConfig.Save(playback.FilePath);
-                        IPCHandles.UpdateMidiFileConfig(fileConfig);
+                        if (!PartyChatCommand.ManualDistributionMode) IPCHandles.UpdateMidiFileConfig(fileConfig);
                     }
                 }
                 catch (Exception e)

@@ -22,6 +22,9 @@ public sealed class RoomServer : IDisposable
     private readonly ConcurrentDictionary<TcpClient, Task> connections = new();
     private readonly ConcurrentQueue<(RoomPeer Peer, RoomCommand Command)> commands = new();
     private readonly ConcurrentQueue<(RoomPeer Peer, RoomPacket Packet)> executionPackets = new();
+    private readonly ConcurrentQueue<(RoomPeer Peer, RoomSongRequest Request)> songRequests = new();
+    private readonly ConcurrentQueue<(RoomPeer Peer, RoomPacket Packet)> planPackets = new();
+    private readonly ConcurrentQueue<(RoomPeer Peer, RoomPacket Packet)> movementPackets = new();
     private readonly ConcurrentDictionary<RoomPeer, RoomRole> participants = new();
     private RoomPeer? executor;
     private RoomPeer? presenter;
@@ -41,6 +44,9 @@ public sealed class RoomServer : IDisposable
     public bool IsExecutor(RoomPeer peer) => peer.IsAlive && ReferenceEquals(peer, Volatile.Read(ref executor));
     public void SetExecutor(RoomPeer? peer) => Volatile.Write(ref executor, peer);
     public bool TryExecution(out (RoomPeer Peer, RoomPacket Packet) value) => executionPackets.TryDequeue(out value);
+    public bool TrySongRequest(out (RoomPeer Peer, RoomSongRequest Request) value) => songRequests.TryDequeue(out value);
+    public bool TryPlanPacket(out (RoomPeer Peer, RoomPacket Packet) value) => planPackets.TryDequeue(out value);
+    public bool TryMovement(out (RoomPeer Peer, RoomPacket Packet) value) => movementPackets.TryDequeue(out value);
     public RoomSnapshot SnapshotFor(RoomPeer peer, RoomSnapshot value) => CanControl(peer) ? value.ForController() : value.ForViewer();
 
     public RoomServer(int port = 28765)
@@ -133,6 +139,24 @@ public sealed class RoomServer : IDisposable
             if (current != null) peer.Send(new RoomPacket { Type = "snapshot", Snapshot = current, Role = hello.Role });
             await peer.Run(packet =>
             {
+                if (packet.Type is "movementPoll" or "movementSubmit" && hello.Role == RoomRole.Viewer && packet.RoomId == RoomId && packet.Movement != null)
+                {
+                    if (movementPackets.Count >= 64) { peer.Dispose(); return; }
+                    movementPackets.Enqueue((peer, packet)); return;
+                }
+                if (packet.Type is "planPublish" or "planRequest" && hello.Role == RoomRole.Viewer && packet.RoomId == RoomId)
+                {
+                    if (planPackets.Count >= 32) { peer.Dispose(); return; }
+                    planPackets.Enqueue((peer, packet)); return;
+                }
+                if (packet.Type == "songRequest" && hello.Role == RoomRole.Viewer && packet.RoomId == RoomId
+                    && packet.SongRequest is { } request && request.Id != Guid.Empty
+                    && request.Hash is { Length: 64 } && request.Hash.All(Uri.IsHexDigit)
+                    && request.Index is >= 0 and < 256)
+                {
+                    if (songRequests.Count >= 64) { peer.Dispose(); return; }
+                    songRequests.Enqueue((peer, request)); return;
+                }
                 if (packet.Type is "executionResult" or "executionSignal")
                 {
                     if (hello.Role != RoomRole.Viewer || executionPackets.Count >= 256) { peer.Dispose(); return; }

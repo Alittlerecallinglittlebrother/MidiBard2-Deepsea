@@ -25,6 +25,12 @@ internal static partial class PartyChatCommand
             ["playonmultipledevices"] = HandlePlayOnMultipleDevices,
             ["pmd"] = HandlePlayOnMultipleDevices,
             ["switchto"] = HandleSwitchTo,
+            ["mbmanual"] = args =>
+            {
+                if (MidiBard.config.playOnMultipleDevices && api.PartyList.Length >= 2
+                    && args.Length >= 1 && int.TryParse(args[0], out var index))
+                    HandleSelectionRequest(args, index - 1, manual: true);
+            },
             ["usechatplaylistsync"] = HandleSendUseChatPlaylistSync,
             ["playlistremove"] = HandleRemoveSong,
             ["playlistmove"] = HandleChangeSongOrder,
@@ -37,6 +43,7 @@ internal static partial class PartyChatCommand
             ["downloadsong"] = HandleDownloadSong,
             ["mbtransport"] = StageIntegration.EnsembleTransport.Receive,
             ["mbloadresult"] = _ => { },
+            ["mbloadcancel"] = args => { if (args.Length == 1 && Guid.TryParseExact(args[0], "N", out var id) && id == receivingRequest) CancelLoad(); },
             ["mbstageproof"] = _ => { },
         };
 
@@ -68,7 +75,7 @@ internal static partial class PartyChatCommand
         }
 
         var orderToken = args.FirstOrDefault(arg => arg.StartsWith("auto=", StringComparison.Ordinal));
-        if (cmd is "switchto" or "updateinstrument" or "mbtransport" or "close")
+        if (cmd is "switchto" or "mbmanual" or "updateinstrument" or "mbtransport" or "close" or "mbloadcancel")
         {
             var leader = api.PartyList.GetPartyLeader();
             if (leader == null || SenderCid(message) != leader.ContentId) return;
@@ -138,7 +145,9 @@ internal static partial class PartyChatCommand
 
     internal static void SendSwitchTo(int songIndex)
     {
-        _ = ObserveLoad(SwitchToAsync(songIndex, System.Threading.CancellationToken.None));
+        _ = ObserveLoad(ManualDistributionMode
+            ? PrepareManualSongAsync(songIndex, System.Threading.CancellationToken.None)
+            : SwitchToAsync(songIndex, System.Threading.CancellationToken.None));
     }
 
     private static void HandleSwitchTo(string[] args)
@@ -318,7 +327,8 @@ internal static partial class PartyChatCommand
             return;
         }
 
-        var order = AutomaticEnsembleAssignment.CaptureOrderToken();
+        var order = MidiBard.CurrentPlayback?.MidiFileConfig?.LeaderDistributed == true
+            ? "" : AutomaticEnsembleAssignment.CaptureOrderToken();
         Chat.SendMessage($"/p updateinstrument{(order.Length > 0 ? " " + order : "")}");
     }
 
@@ -329,7 +339,8 @@ internal static partial class PartyChatCommand
             return;
         }
 
-        if (args.Any(arg => arg.StartsWith("auto=", StringComparison.Ordinal)) && AutomaticEnsembleAssignment.IsEnabled)
+        if (args.Any(arg => arg.StartsWith("auto=", StringComparison.Ordinal)) && AutomaticEnsembleAssignment.IsEnabled
+            && MidiBard.CurrentPlayback.MidiFileConfig?.LeaderDistributed != true)
             MidiBard.CurrentPlayback.MidiFileConfig = AutomaticEnsembleAssignment.Create(
                 MidiBard.CurrentPlayback.TrackInfos, MidiFileConfigManager.GetMidiConfigFromFile(MidiBard.CurrentPlayback.FilePath));
 

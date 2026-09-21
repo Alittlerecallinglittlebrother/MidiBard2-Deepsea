@@ -10,6 +10,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using Melanchall.DryWetMidi.Multimedia;
 using Dalamud.Utility;
+using MidiBard.Control.MidiControl;
 using MidiBard.Managers.Ipc;
 
 namespace MidiBard.StageIntegration;
@@ -24,6 +25,9 @@ internal sealed class StageFeature : IDisposable
     private readonly StagePlaybackIpc ipc;
     private readonly MidiBardQueuePort queuePort;
     private readonly RoomPlaybackCoordinator roomPlayback;
+    private readonly RoomSongSharing songTransfer;
+    private readonly RoomAssignmentSharing assignmentTransfer;
+    private readonly RoomMovementCoordinator movement;
     private readonly AutoQueuePlayer queue;
     private int requestIssueCount;
     private DateTimeOffset nextLibraryPoll;
@@ -45,6 +49,22 @@ internal sealed class StageFeature : IDisposable
                 : api.PartyList.Length >= 2 && !api.PartyList.IsPartyLeader() ? "请由小队队长创建演出房间" : null,
         };
         roomPlayback = new RoomPlaybackCoordinator(controller, controller.Room, queuePort);
+        controller.Room.SongSyncEnabled = () => MidiBard.config.EnableCrossComputerSongSync;
+        controller.Room.SetSongSyncEnabled = value => { MidiBard.config.EnableCrossComputerSongSync = value; MidiBard.SaveConfig(); };
+        songTransfer = new RoomSongSharing(controller.Room, controller.DataDirectory,
+            () => MidiBard.config.EnableCrossComputerSongSync, () => queuePort.Party,
+            peer => roomPlayback.VerifiedMember(peer) is var cid && cid != 0 && api.PartyList.Any(p => p.ContentId == cid));
+        controller.Room.Songs = songTransfer;
+        assignmentTransfer = new RoomAssignmentSharing(controller.Room, () => MidiBard.config.EnableCrossComputerSongSync,
+            () => queuePort.Party, () => api.PartyList.Select(p => p.ContentId).ToArray(), roomPlayback.VerifiedMember);
+        PartyChatCommand.ManualPlanPublisher = assignmentTransfer.PublishAsync;
+        PartyChatCommand.ManualPlanReceiver = assignmentTransfer.ReceiveAsync;
+        movement = new RoomMovementCoordinator(controller.Room, new MidiBardMovementBackend(), roomPlayback.VerifiedMember, controller.DataDirectory);
+        controller.Room.Movement = movement;
+        PartyChatCommand.SongTransferRequest = (_, hash, token) => songTransfer.ReceiveAsync(hash, token);
+        PartyChatCommand.SongTransferSource = (_, hash, path) => songTransfer.Offer(path, hash);
+        PartyChatCommand.ExternalSongLoader = PlaylistManager.LoadExternalPlayback;
+        PartyChatCommand.TransferredSongResolver = songTransfer.ResolveCached;
         queue = new AutoQueuePlayer(controller, roomPlayback);
         controller.QueuePlayer = queue;
         PartyChatCommand.StageProof += roomPlayback.ReceiveProof;
@@ -122,6 +142,9 @@ internal sealed class StageFeature : IDisposable
     {
         PartyChatCommand.Tick();
         roomPlayback.Tick();
+        songTransfer.Tick();
+        assignmentTransfer.Tick();
+        movement.Tick();
         if (!roomPlayback.IsCoordinated && !controller.Room!.IsRemote && controller.LocalQueueControlIssue is { } reason)
         {
             queue.RevokeControl(reason);
@@ -144,6 +167,15 @@ internal sealed class StageFeature : IDisposable
         api.PluginInterface.UiBuilder.Draw -= Draw;
         PlaylistManager.StageRemovalIssue = null;
         PartyChatCommand.CancelLoad();
+        PartyChatCommand.SongTransferRequest = null;
+        PartyChatCommand.SongTransferSource = null;
+        PartyChatCommand.ExternalSongLoader = null;
+        PartyChatCommand.TransferredSongResolver = null;
+        songTransfer.Dispose();
+        PartyChatCommand.ManualPlanPublisher = null;
+        PartyChatCommand.ManualPlanReceiver = null;
+        assignmentTransfer.Dispose();
+        movement.Dispose();
         PartyChatCommand.StageProof -= roomPlayback.ReceiveProof;
         queue.Dispose(); roomPlayback.Dispose(); playback.Dispose(); requests.Dispose(); ipc.Dispose();
         windows.RemoveAllWindows(); window.Dispose(); controller.Dispose(); UiKit.IconFont = null;

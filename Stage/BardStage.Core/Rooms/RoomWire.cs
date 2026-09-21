@@ -56,6 +56,10 @@ public sealed class RoomPeer : IDisposable
         return false;
     }
 
+    // File transfers retry on the framework pump instead of disconnecting a
+    // slow peer when the control-message queue is temporarily full.
+    public bool TrySend(RoomPacket packet) => IsAlive && outgoing.Writer.TryWrite(packet);
+
     internal async Task Run(Action<RoomPacket> receive)
     {
         var write = SendLoop();

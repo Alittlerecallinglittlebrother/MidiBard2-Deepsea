@@ -370,6 +370,9 @@ namespace MidiBard.Managers
         public float Speed = 1;
         // Included in IPC snapshots; automatic assignments are only saved after a manual edit.
         public bool AutomaticallyAssigned;
+        // Only the current playback uses a received plan; never overwrite the receiver's sidecar.
+        [Newtonsoft.Json.JsonIgnore]
+        public bool LeaderDistributed;
 
         internal static bool IsCidOnTrack(ulong cid, DbTrack track)
         {

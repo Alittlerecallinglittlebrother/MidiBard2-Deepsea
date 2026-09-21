@@ -38,7 +38,8 @@ public partial class PluginUI
     {
         var ensembleRunning = MidiBard.AgentMetronome.EnsembleModeRunning;
         var isEnsembleButtonsDisabled = MidiBard.CurrentPlayback == null || MidiBard.CurrentPlayback.IsSoloPlayback
-            || PlaylistManager.IsLoading || ensembleRunning || MidiBard.IsPlaying;
+            || PartyChatCommand.IsLoading || ensembleRunning || MidiBard.IsPlaying || PartyChatCommand.EnsembleLoadIssue != null;
+        if (PartyChatCommand.EnsembleLoadIssue is { } issue) ImGui.TextWrapped(issue);
 
         ImGuiUtil.PushIconButtonSize(new Vector2(ImGuiHelpers.GlobalScale * 40, ImGui.GetFrameHeight()));
         // if (!MidiBard.config.playOnMultipleDevices || (MidiBard.config.playOnMultipleDevices && MidiBard.config.usingFileSharingServices))
@@ -50,7 +51,7 @@ public partial class PluginUI
             {
                 if (MidiBard.config.AutoAssignEnsembleTracks || MidiBard.config.UpdateInstrumentBeforeReadyCheck)
                 {
-                    if (MidiBard.CurrentPlayback?.MidiFileConfig is { } config)
+                    if (MidiBard.CurrentPlayback?.MidiFileConfig is { } config && !config.LeaderDistributed)
                     {
                         IPCHandles.UpdateMidiFileConfig(config);
                     }
@@ -88,7 +89,7 @@ public partial class PluginUI
         ImGui.BeginDisabled(isEnsembleButtonsDisabled);
         if (ImGuiUtil.IconButton(FontAwesomeIcon.Guitar, "##btnUpdateInstrument", Language.ensemble_update_instruments))
         {
-            if (MidiBard.CurrentPlayback?.MidiFileConfig is { } config)
+            if (MidiBard.CurrentPlayback?.MidiFileConfig is { } config && !config.LeaderDistributed)
             {
                 IPCHandles.UpdateMidiFileConfig(config);
             }

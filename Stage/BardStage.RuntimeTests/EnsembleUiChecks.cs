@@ -61,12 +61,34 @@ namespace MidiBard
     public partial class PluginUI
     {
         public static string LogPath = "";
-        private void DrawEnsembleControlMenu() { ImGui.LogToFile(-1, LogPath); }
-        private bool InstrumentPicker(string id, ref uint instrument) => false;
+        private void DrawEnsembleControlMenu()
+        {
+            ImGui.LogToFile(-1, LogPath);
+            if (PartyChatCommand.EnsembleLoadIssue is { } issue) ImGui.TextWrapped(issue);
+        }
+        // Native game icon textures are substituted; preserve the production picker's footprint.
+        private bool InstrumentPicker(string id, ref uint instrument)
+        {
+            ImGui.Button($"琴##{id}", new(ImGui.GetFrameHeight(), ImGui.GetFrameHeight()));
+            return false;
+        }
     }
     internal static class api
     {
         internal static PartyFixture PartyList = new();
+        internal static ChatFixture ChatGui = new();
+    }
+    internal sealed class ChatFixture { internal void PrintError(string message) { } }
+    internal static class PartyChatCommand
+    {
+        internal static bool IsLoading => Managers.PlaylistManager.IsLoading;
+        internal static bool ManualDistributionMode => MidiBard.config.playOnMultipleDevices
+            && MidiBard.config.EnableCrossComputerSongSync && !MidiBard.config.AutoAssignEnsembleTracks;
+        internal static string ManualDistributionStatus => "分配尚未下发";
+        internal static string? EnsembleLoadIssue => ManualDistributionMode ? "请完成手动分配并下发，等待全员载入成功后再开始" : null;
+        internal static int ManualClicks;
+        internal static void SendManualAssignment() { ManualClicks++; }
+        internal static void InvalidateAssignment() { }
     }
     internal sealed class PartyFixture : List<MemberFixture>
     {
@@ -95,6 +117,7 @@ namespace MidiBard
         internal bool AutoAssignEnsembleTracks = true;
         internal bool playOnMultipleDevices = false;
         internal bool usingFileSharingServices = false;
+        internal bool EnableCrossComputerSongSync;
         internal List<MemberConfigFixture> EnsembleMemberConfigs = [];
     }
     internal sealed class MemberConfigFixture { internal ulong Cid => 1; }
@@ -109,6 +132,7 @@ namespace MidiBard
     internal sealed class MidiFileConfig
     {
         internal bool AutomaticallyAssigned;
+        internal bool LeaderDistributed;
         internal List<TrackFixture> Tracks = [];
         internal static ulong GetFirstCidInParty(TrackFixture track) => track.AssignedCids.FirstOrDefault();
         internal void Save(string path) { }
@@ -133,12 +157,21 @@ namespace MidiBard
     }
     internal static class ImGuiUtil
     {
-        internal static bool InputIntWithReset(string id, ref int value, int step, Func<int> reset) => false;
+        internal static bool InputIntWithReset(string id, ref int value, int step, Func<int> reset)
+        {
+            var changed = ImGui.InputInt(id, ref value, step);
+            if (ImGui.IsItemClicked(ImGuiMouseButton.Right)) { value = reset(); return true; }
+            return changed;
+        }
         internal static void ToolTip(string text) { }
     }
 }
 namespace MidiBard.Managers
 {
+    internal static class DistributedEnsembleAssignment
+    {
+        internal static global::MidiBard.MidiFileConfig CreateDraft(object[] tracks, global::MidiBard.MidiFileConfig? saved) => saved ?? new();
+    }
     internal static class PlaylistManager { internal static bool IsLoading; }
     internal static class AutomaticEnsembleAssignment
     {

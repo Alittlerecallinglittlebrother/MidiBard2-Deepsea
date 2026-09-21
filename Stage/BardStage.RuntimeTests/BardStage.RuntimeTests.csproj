@@ -15,6 +15,10 @@
     <ProjectReference Include="..\BardStage.Core\BardStage.Core.csproj" />
     <Compile Include="..\BardStage\StageController*.cs" Link="Production\%(Filename)%(Extension)" />
     <Compile Include="..\BardStage\StageRoom.cs" Link="Production\StageRoom.cs" />
+    <Compile Include="..\BardStage\RoomSongSharing.cs" Link="Production\RoomSongSharing.cs" />
+    <Compile Include="..\BardStage\RoomAssignmentSharing.cs" Link="Production\RoomAssignmentSharing.cs" />
+    <Compile Include="..\BardStage\RoomMovementCoordinator.cs" Link="Production\RoomMovementCoordinator.cs" />
+    <Compile Include="..\BardStage\FormationStore.cs" Link="Production\FormationStore.cs" />
     <Compile Include="..\BardStage\RoomPlaybackCoordinator.cs" Link="Production\RoomPlaybackCoordinator.cs" />
     <Compile Include="..\BardStage\PlaybackObserver.cs" Link="Production\PlaybackObserver.cs" />
     <Compile Include="..\BardStage\AutoQueuePlayer.cs" Link="Production\AutoQueuePlayer.cs" />

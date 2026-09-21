@@ -11,6 +11,7 @@ internal static class HandoffRuntimeChecks
 {
     public static void RunUi(string scratch, string midiPath, string output)
     {
+        Directory.CreateDirectory(output);
         using var f = new Fixture(scratch, midiPath);
         f.Connect(); f.AddTwoAndStart();
         RuntimeUi.RunHandoffChecks(f.A.Controller, () =>
@@ -29,6 +30,21 @@ internal static class HandoffRuntimeChecks
 
     public static void Run(string scratch, string midiPath)
     {
+        using (var f = new Fixture(scratch, midiPath) { TransferSongs = true })
+        {
+            f.Connect(); f.Leader(2);
+            f.Until(() => f.A.Controller.CanEditQueue && f.Host.Coordinator.ExecutionIssue == null);
+            f.A.Backend.MissingSong = true;
+            f.AddTwoAndStart();
+            Check(f.A.Backend.Path.StartsWith(f.A.Controller.DataDirectory, StringComparison.OrdinalIgnoreCase)
+                && File.Exists(f.A.Backend.Path) && f.A.Controller.State.Songs.Count == 0,
+                "verified new leader with an empty library downloads the host queue MIDI before executing load");
+            f.FinishAll();
+            f.Until(() => f.Show.Entries[1].Status == EntryStatus.InProgress);
+            Check(f.A.Backend.Starts == 2 && f.A.Backend.Loads == 2 && f.A.Controller.State.Songs.Count == 0,
+                "room handoff continues the next missing song through private cache without importing a library");
+        }
+
         using (var f = new Fixture(scratch, midiPath))
         {
             f.Connect(); f.Leader(2);
@@ -236,6 +252,7 @@ internal static class HandoffRuntimeChecks
         public readonly StageController Presenter;
         public readonly AutoQueuePlayer Player;
         public bool RealEngine;
+        public bool TransferSongs;
         public ShowSetlist Show => Host.Controller.QueueShow!;
         public Fixture(string scratch, string midiPath)
         {
@@ -306,6 +323,7 @@ internal static class HandoffRuntimeChecks
         {
             Host.Coordinator.Tick(); Host.Controller.Poll(); Host.Controller.Room!.Tick(); Player.Tick();
             foreach (var node in new[] { A, B }) { node.Coordinator.Tick(); node.Controller.Poll(); node.Controller.Room!.Tick(); }
+            foreach (var node in Nodes) node.Sharing.Tick();
             Presenter.Poll(); Presenter.Room!.Tick();
         }
         public void PumpFor(int milliseconds)
@@ -324,7 +342,7 @@ internal static class HandoffRuntimeChecks
         public void Dispose()
         {
             var tasks = Nodes.Select(n => n.Controller.Room?.TransportCompletion).Append(Presenter.Room?.TransportCompletion).OfType<Task>().ToArray();
-            Player.Dispose(); foreach (var node in Nodes) { node.Backend.Dispose(); node.Coordinator.Dispose(); node.Controller.Dispose(); }
+            Player.Dispose(); foreach (var node in Nodes) { node.Sharing.Dispose(); node.Backend.Dispose(); node.Coordinator.Dispose(); node.Controller.Dispose(); }
             Presenter.Dispose(); Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
         }
     }
@@ -334,11 +352,15 @@ internal static class HandoffRuntimeChecks
         public readonly StageController Controller;
         public readonly Backend Backend;
         public readonly RoomPlaybackCoordinator Coordinator;
+        public readonly RoomSongSharing Sharing;
         public Node(Fixture fixture, string scratch, ulong cid)
         {
             Controller = new(Path.Combine(scratch, "handoff-" + cid + "-" + Guid.NewGuid())) { SyncAvailable = true };
             Controller.Room = new(Controller); Backend = new(fixture, cid); Coordinator = new(Controller, Controller.Room, Backend);
             Backend.Coordinator = Coordinator;
+            Sharing = new(Controller.Room, Controller.DataDirectory, () => fixture.TransferSongs, () => Backend.Party,
+                peer => Coordinator.VerifiedMember(peer) != 0);
+            Controller.Room.Songs = Sharing; Backend.Sharing = Sharing;
         }
     }
 
@@ -346,6 +368,7 @@ internal static class HandoffRuntimeChecks
     {
         public RoomPartyState Party { get; set; } = new(Fixture.PartyId, cid, 1);
         public RoomPlaybackCoordinator Coordinator = null!;
+        public RoomSongSharing Sharing = null!;
         public int Loads, Starts, Pauses, Resumes, Stops, Finishes, Adopts;
         public bool Prove = true, FailStop, MissingSong, FailAdopt;
         public TaskCompletionSource? LoadGate;
@@ -362,6 +385,8 @@ internal static class HandoffRuntimeChecks
         public string Fingerprint(string filePath) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(filePath)));
         public string? ResolveSong(string hash) => MissingSong ? null
             : fixture.Host.Controller.State.Songs.FirstOrDefault(s => Fingerprint(s.FilePath) == hash)?.FilePath;
+        public async Task<string?> ResolveSongAsync(string hash, CancellationToken token)
+            => ResolveSong(hash) ?? (fixture.TransferSongs ? await Sharing.ReceiveAsync(hash, token) : null);
         public void SendIdentityProof(Guid roomId, string challenge)
         {
             LastProof = (roomId, challenge);

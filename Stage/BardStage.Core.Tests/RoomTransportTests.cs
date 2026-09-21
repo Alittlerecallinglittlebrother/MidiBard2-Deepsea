@@ -12,6 +12,35 @@ namespace BardStage.Core.Tests;
 public sealed partial class RoomTransportTests
 {
     [Fact]
+    public async Task ViewerCanRequestAuthenticatedSongChunksWithoutCatalogAccess()
+    {
+        using var server = new RoomServer(0);
+        server.Publish(new RoomSnapshot { RoomId = server.RoomId, Revision = 1 });
+        using var viewer = new RoomClient(server.Invite("127.0.0.1", server.Port, RoomRole.Viewer));
+        await Until(() => viewer.Connected);
+        var hash = new string('A', 64);
+        var request = new RoomSongRequest(Guid.NewGuid(), hash);
+        Assert.True(viewer.SendSongRequest(request));
+        (RoomPeer Peer, RoomSongRequest Request) received = default;
+        await Until(() => server.TrySongRequest(out received));
+        Assert.Equal(request, received.Request);
+        using var presenter = new RoomClient(server.Invite("127.0.0.1", server.Port));
+        await Until(() => presenter.Connected);
+        Assert.False(presenter.SendSongRequest(request));
+        received.Peer!.Send(new RoomPacket { Type = "songChunk", RoomId = server.RoomId,
+            SongChunk = new(request.Id, hash, 0, 3, "song.mid", [1, 2, 3]) });
+        received.Peer.Send(new RoomPacket { Type = "songResult", RoomId = server.RoomId,
+            SongResult = new(request.Id, hash, true, "ok") });
+        RoomPacket packet = null!;
+        await Until(() => viewer.TrySongPacket(out packet));
+        Assert.Equal("songChunk", packet.Type);
+        await Until(() => viewer.TrySongPacket(out packet));
+        Assert.True(packet.SongResult!.Success);
+        viewer.Dispose(); presenter.Dispose(); server.Dispose();
+        await Task.WhenAll(viewer.Completion, presenter.Completion, server.Completion).WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
     public async Task PinnedTlsAuthenticatesAndExchangesStateAndCommands()
     {
         using var server = new RoomServer(0);

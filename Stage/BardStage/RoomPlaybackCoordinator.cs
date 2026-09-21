@@ -12,6 +12,8 @@ public interface IRoomEnsembleBackend : IStagePlaybackPort
     RoomPartyState Party { get; }
     string Fingerprint(string filePath);
     string? ResolveSong(string hash);
+    Task<string?> ResolveSongAsync(string hash, CancellationToken cancellationToken)
+        => Task.FromResult(ResolveSong(hash));
     void SendIdentityProof(Guid roomId, string challenge);
     bool Adopt(string hash);
     void Revoke();
@@ -48,6 +50,8 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
     public bool IsCoordinated => room.IsCaptain && controller.State.RequestSettings.PlaybackMode == QueuePlaybackMode.Ensemble;
     public long Epoch => epoch;
     public ulong ExecutorCid => ready ? observedParty.LeaderCid : 0;
+    public ulong VerifiedMember(RoomPeer peer) => peer.IsAlive && observedRoom == room.Id
+        && identities.TryGetValue(peer, out var proof) && proof.Party == backend.Party.PartyId ? proof.Cid : 0;
     public string? ExecutionIssue => IsCoordinated ? issue ?? (!ready ? "正在确认当前队长的演奏端" : null) : null;
     public string? LocalControlIssue => IsCoordinated && (backend.Party.SelfCid == 0 || backend.Party.SelfCid != backend.Party.LeaderCid)
         ? "队长已转让，本机只读；演出房间继续同步" : null;
@@ -90,6 +94,7 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
     {
         if (IsCoordinated && mode == QueuePlaybackMode.Ensemble) RequireReady();
         currentHash = backend.Fingerprint(filePath); currentPath = filePath;
+        if (mode == QueuePlaybackMode.Ensemble) room.Songs?.Offer(filePath, currentHash);
         canonicalPlaybackId = Guid.NewGuid(); sourcePlaybackId = Guid.Empty; sourceSequence = 0;
         if (!IsCoordinated || executor == null || mode != QueuePlaybackMode.Ensemble)
             return backend.LoadAsync(filePath, mode, cancellationToken);
@@ -123,7 +128,7 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
         CancellationToken cancellationToken = default)
     {
         var command = new RoomExecutionCommand { Epoch = epoch, Action = action, Hash = hash, Mode = mode, KeepInstruments = keep };
-        var item = new Pending(command, cancellationToken, DateTimeOffset.UtcNow.AddSeconds(action == RoomExecutionAction.Load ? 90 : 12));
+        var item = new Pending(command, cancellationToken, DateTimeOffset.UtcNow.AddSeconds(action == RoomExecutionAction.Load ? 330 : 12));
         if (executor?.Send(new RoomPacket { Type = "execute", RoomId = room.Id, Execution = command }) != true)
             throw new InvalidOperationException("当前队长演奏端未连接");
         pending.Add(command.Id, item);
@@ -352,9 +357,8 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
                     Reply(new(command.Id, command.Epoch, true, "当前演奏已接管", ToWire(lastLocalSignal, lastLocalHash)));
                     return;
                 case RoomExecutionAction.Load:
-                    var path = backend.ResolveSong(command.Hash) ?? throw new InvalidOperationException("本机曲库缺少同一份 MIDI 文件");
                     var cancellation = new CancellationTokenSource();
-                    try { clientLoad = new(command, cancellation, backend.LoadAsync(path, command.Mode, cancellation.Token)); }
+                    try { clientLoad = new(command, cancellation, LoadClientAsync(command, cancellation)); }
                     catch { cancellation.Dispose(); throw; }
                     return;
                 case RoomExecutionAction.Start:
@@ -369,6 +373,15 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
             Reply(new(command.Id, command.Epoch, true, "演奏指令已执行"));
         }
         catch (Exception ex) { Reply(new(command.Id, command.Epoch, false, ex.Message)); }
+    }
+
+    private async Task LoadClientAsync(RoomExecutionCommand command, CancellationTokenSource cancellation)
+    {
+        var path = await backend.ResolveSongAsync(command.Hash, cancellation.Token)
+            ?? throw new InvalidOperationException("本机曲库缺少同一份 MIDI 文件，请开启当前歌曲分发或手动导入");
+        cancellation.Token.ThrowIfCancellationRequested();
+        if (!ClientHasAuthority || command.Epoch != clientLease!.Epoch) throw new OperationCanceledException("歌曲接收期间队长权限已改变");
+        await backend.LoadAsync(path, command.Mode, cancellation.Token);
     }
 
     private void Reply(RoomExecutionResult result)

@@ -64,6 +64,7 @@ internal class EnsembleManager : IDisposable
 
     internal static unsafe void BeginEnsembleReadyCheck()
     {
+        if (PartyChatCommand.EnsembleLoadIssue is { } issue) { api.ChatGui.PrintError("[MidiBard] " + issue); return; }
         var ensembleRunning = MidiBard.AgentMetronome.EnsembleModeRunning;
         if (!ensembleRunning)
         {

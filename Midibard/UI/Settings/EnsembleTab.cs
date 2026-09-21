@@ -100,6 +100,12 @@ public partial class PluginUI
                 IPCHandles.SyncAllSettings();
             }
             ImGuiUtil.ToolTip("Using File Sharing Services like Google Drive to sync songs and performer settings.");
+
+            if (ImGui.Checkbox("队长通过演出房间分发当前 MIDI", ref MidiBard.config.EnableCrossComputerSongSync))
+            {
+                MidiBard.SaveConfig();
+            }
+            ImGuiUtil.ToolTip("默认关闭。开启后，队员通过已连接的演出房间按 SHA256 请求当前歌曲；文件写入独立缓存，不加入个人曲库。需要所有演奏端加入队长创建的队员查看房间。");
             ImGui.Unindent();
         }
 

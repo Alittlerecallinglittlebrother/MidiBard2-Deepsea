@@ -37,7 +37,7 @@ internal sealed class PartySongLoad
             }
             else if (result is "missing" or "failed")
                 completion.TrySetException(new InvalidOperationException(result == "missing"
-                    ? $"{name} 的曲库中没有相同的 MIDI 文件，请同步曲库后重试"
+                    ? $"{name} 缺少相同的 MIDI 文件，请检查歌曲同步开关和演出房间连接，或手动导入"
                     : $"{name} 未能载入歌曲，请检查该队员的 MidiBard 提示"));
         }
     }

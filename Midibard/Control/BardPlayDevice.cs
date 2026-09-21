@@ -34,6 +34,10 @@ namespace MidiBard.Control;
 
 public class BardPlayDevice : IOutputDevice
 {
+    private static GuitarToneMode PlaybackToneMode => MidiBard.CurrentPlayback?.MidiFileConfig is { LeaderDistributed: true }
+        ? GuitarToneMode.OverrideByTrack : MidiBard.config.GuitarToneMode;
+    private static bool PlaybackAdaptNotes => MidiBard.CurrentPlayback?.MidiFileConfig is { LeaderDistributed: true } assigned
+        ? assigned.AdaptNotes : MidiBard.config.AdaptNotesOOR;
     public abstract record MidiEventMetaData;
     public record MidiDeviceMetaData : MidiEventMetaData;
     public record MidiPlaybackMetaData(int TrackIndex, long Time, int EventValue) : MidiEventMetaData
@@ -214,7 +218,7 @@ public class BardPlayDevice : IOutputDevice
         switch (midiEvent)
         {
             case ProgramChangeEvent programChangeEvent:
-                if ((bool)(MidiBard.CurrentPlayback?.TrackInfos[trackIndex].IsProgramElectricGuitar) && MidiBard.config.GuitarToneMode == GuitarToneMode.ProgramElectricGuitarMode)
+                if ((bool)(MidiBard.CurrentPlayback?.TrackInfos[trackIndex].IsProgramElectricGuitar) && PlaybackToneMode == GuitarToneMode.ProgramElectricGuitarMode)
                     Channels[programChangeEvent.Channel].Program = programChangeEvent.ProgramNumber;
                 else
                     ProcessProgramChange(programChangeEvent);
@@ -225,13 +229,13 @@ public class BardPlayDevice : IOutputDevice
 
                 if (MidiBard.PlayingGuitar)
                 {
-                    if ((MidiBard.CurrentPlayback != null) && (bool)(MidiBard.CurrentPlayback?.TrackInfos[trackIndex].IsProgramElectricGuitar) && MidiBard.config.GuitarToneMode == GuitarToneMode.ProgramElectricGuitarMode)
+                    if ((MidiBard.CurrentPlayback != null) && (bool)(MidiBard.CurrentPlayback?.TrackInfos[trackIndex].IsProgramElectricGuitar) && PlaybackToneMode == GuitarToneMode.ProgramElectricGuitarMode)
                     {
                         ApplyToneByChannel(noteEvent.Channel);
                     }
                     else
                     {
-                        switch (MidiBard.config.GuitarToneMode)
+                        switch (PlaybackToneMode)
                         {
                             case GuitarToneMode.Off:
                                 break;
@@ -321,7 +325,7 @@ public class BardPlayDevice : IOutputDevice
 
     private void ProcessProgramChange(ProgramChangeEvent programChangeEvent)
     {
-        switch (MidiBard.config.GuitarToneMode)
+        switch (PlaybackToneMode)
         {
             case GuitarToneMode.Off:
                 break;
@@ -364,7 +368,7 @@ public class BardPlayDevice : IOutputDevice
     {
         noteNumber = noteNumber - 48 + MidiBard.config.TransposeGlobal;
 
-        if (MidiBard.config.AdaptNotesOOR)
+        if (PlaybackAdaptNotes)
         {
             if (noteNumber < 0)
             {

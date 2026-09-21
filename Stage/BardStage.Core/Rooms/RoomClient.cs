@@ -13,6 +13,9 @@ public sealed class RoomClient : IDisposable
     private readonly CancellationTokenSource lifetime = new();
     private readonly ConcurrentQueue<RoomResult> results = new();
     private readonly ConcurrentQueue<RoomPacket> executionPackets = new();
+    private readonly ConcurrentQueue<RoomPacket> songPackets = new();
+    private readonly ConcurrentQueue<RoomPlanResult> planResults = new();
+    private readonly ConcurrentQueue<MovementEnvelope> movementFrames = new();
     private RoomPeer? peer;
     private TcpClient? connecting;
     private RoomSnapshot? snapshot;
@@ -35,6 +38,15 @@ public sealed class RoomClient : IDisposable
     public bool TryResult(out RoomResult result) => results.TryDequeue(out result!);
     public bool SendExecution(RoomPacket packet) => Connected && Volatile.Read(ref peer)?.Send(packet) == true;
     public bool TryExecution(out RoomPacket packet) => executionPackets.TryDequeue(out packet!);
+    public bool SendSongRequest(RoomSongRequest request) => Connected && Role == RoomRole.Viewer
+        && Volatile.Read(ref peer)?.Send(new RoomPacket { Type = "songRequest", RoomId = RoomId, Role = Role, SongRequest = request }) == true;
+    public bool TrySongPacket(out RoomPacket packet) => songPackets.TryDequeue(out packet!);
+    public bool SendPlanPacket(RoomPacket packet) => Connected && Role == RoomRole.Viewer
+        && Volatile.Read(ref peer)?.Send(packet) == true;
+    public bool TryPlanResult(out RoomPlanResult result) => planResults.TryDequeue(out result!);
+    public bool SendMovement(string type, MovementEnvelope value) => Connected && Role == RoomRole.Viewer
+        && Volatile.Read(ref peer)?.Send(new() { Type = type, RoomId = RoomId, Movement = value }) == true;
+    public bool TryMovement(out MovementEnvelope value) => movementFrames.TryDequeue(out value!);
 
     private async Task ConnectLoop()
     {
@@ -60,6 +72,9 @@ public sealed class RoomClient : IDisposable
                 session = new RoomPeer(socket, stream, lifetime.Token);
                 Volatile.Write(ref snapshot, null);
                 executionPackets.Clear();
+                songPackets.Clear();
+                planResults.Clear();
+                movementFrames.Clear();
                 Volatile.Write(ref peer, session);
                 Interlocked.Increment(ref generation);
                 await session.Run(packet =>
@@ -69,6 +84,16 @@ public sealed class RoomClient : IDisposable
                     else if (packet.Type == "result" && packet.Result is { } result && packet.Snapshot is { } confirmed
                         && confirmed.RoomId == invite.RoomId && results.Count < 128)
                     { AcceptSnapshot(confirmed); results.Enqueue(result); }
+                    else if (Role == RoomRole.Viewer && packet.Type is "songChunk" or "songResult"
+                        && packet.RoomId == invite.RoomId && songPackets.Count < 4
+                        && (packet.Type == "songResult" || packet.SongChunk?.Data is { Length: <= 65536 }))
+                        songPackets.Enqueue(packet);
+                    else if (Role == RoomRole.Viewer && packet.Type == "movementFrame" && packet.RoomId == invite.RoomId
+                        && packet.Movement is { } movement && movementFrames.Count < 16)
+                        movementFrames.Enqueue(movement);
+                    else if (Role == RoomRole.Viewer && packet.Type == "planResult" && packet.RoomId == invite.RoomId
+                        && packet.PlanResult is { } planResult && planResults.Count < 16)
+                        planResults.Enqueue(planResult);
                     else if (Role == RoomRole.Viewer && packet.Type is "proofChallenge" or "executionLease" or "execute" && executionPackets.Count < 256)
                         executionPackets.Enqueue(packet);
                     else session.Dispose();

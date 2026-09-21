@@ -12,7 +12,7 @@
     ],
     "AcceptsFeedback": "False",
     "IconUrl": "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/icon.png",
-    "Changelog": "3.2.5.21：修复异常 MIDI 导致曲库每秒反复同步、界面闪烁及搜索被打断；兼容异常通道事件参数，问题文件未变化时不再自动重复导入，同步期间仍可搜索曲库。保留 MIDI 原文件，不含实验性演奏中换乐器功能。",
+    "Changelog": "3.2.5.24：新增跨电脑当前歌曲同步，队员无需预先导入 MIDI；支持队长手动指定轨道、演奏人、乐器和移调后一键下发，保留自动分配。新增移动与队形，支持跟随队长、拖动编辑站位与朝向、保存预设、统一列队及停止。歌曲同步默认关闭，移动接收每次加载后默认关闭；不含演奏中换乐器功能。",
     "ImageUrls": [
         "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/docs/images/queue.png",
         "https://raw.githubusercontent.com/Alittlerecallinglittlebrother/MidiBard2-Deepsea/main/docs/images/viewer.png"

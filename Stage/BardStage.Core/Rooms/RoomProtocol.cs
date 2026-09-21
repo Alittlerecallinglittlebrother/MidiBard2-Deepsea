@@ -31,6 +31,9 @@ public sealed record RoomPlayback(bool Enabled, bool Loading, bool Paused, bool 
 public sealed record RoomProofChallenge(string Challenge, long PartyId);
 public sealed record RoomExecutionLease(long Epoch, long PartyId, ulong LeaderCid, bool Granted);
 public sealed record RoomExecutionSignal(long Epoch, Guid PlaybackId, long Sequence, string Hash, string Kind, DateTimeOffset AtUtc);
+public sealed record RoomSongRequest(Guid Id, string Hash, int Index = 0);
+public sealed record RoomSongChunk(Guid Id, string Hash, int Index, int Length, string FileName, byte[] Data);
+public sealed record RoomSongResult(Guid Id, string Hash, bool Success, string Message);
 public sealed class RoomExecutionCommand
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -53,9 +56,11 @@ public sealed class RoomSnapshot
     public long AuthorityEpoch { get; set; }
     public ulong ExecutorCid { get; set; }
     public string ExecutionStatus { get; set; } = "";
+    public bool MovementSupported { get; set; }
 
     internal RoomSnapshot ForController() => new()
     {
+        MovementSupported = MovementSupported,
         RoomId = RoomId, Revision = Revision, Catalog = Catalog, Playback = Playback,
         PresenterReceivesChat = PresenterReceivesChat, CanControl = true,
         AuthorityEpoch = AuthorityEpoch, ExecutorCid = ExecutorCid, ExecutionStatus = ExecutionStatus,
@@ -63,6 +68,7 @@ public sealed class RoomSnapshot
 
     internal RoomSnapshot ForViewer() => new()
     {
+        MovementSupported = MovementSupported,
         RoomId = RoomId, Revision = Revision, Playback = Playback,
         AuthorityEpoch = AuthorityEpoch, ExecutorCid = ExecutorCid, ExecutionStatus = ExecutionStatus,
         Catalog = new CatalogState
@@ -98,6 +104,13 @@ public sealed class RoomPacket
     public RoomExecutionCommand? Execution { get; set; }
     public RoomExecutionResult? ExecutionResult { get; set; }
     public RoomExecutionSignal? Signal { get; set; }
+    public RoomSongRequest? SongRequest { get; set; }
+    public RoomSongChunk? SongChunk { get; set; }
+    public RoomSongResult? SongResult { get; set; }
+    public RoomSongPlan? SongPlan { get; set; }
+    public RoomPlanRequest? PlanRequest { get; set; }
+    public RoomPlanResult? PlanResult { get; set; }
+    public MovementEnvelope? Movement { get; set; }
 }
 
 public sealed record RoomInvite(string Host, int Port, string Fingerprint, string Key, Guid RoomId, RoomRole Role = RoomRole.Presenter)

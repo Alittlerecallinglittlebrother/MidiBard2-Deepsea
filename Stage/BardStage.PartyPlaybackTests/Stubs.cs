@@ -12,8 +12,9 @@ namespace Melanchall.DryWetMidi.Multimedia
     public class Playback
     {
         public string FilePath { get; set; } = "";
-        public object MidiFileConfig { get; set; } = new();
-        public object TrackInfos { get; set; } = new();
+        internal global::MidiBard.Managers.MidiFileConfig MidiFileConfig { get; set; } = new();
+        internal global::MidiBard.Managers.TrackInfo[] TrackInfos { get; set; } = [new(), new()];
+        public bool IsSoloPlayback;
         public void SyncTrackStatusWithMidiFileConfig() { }
         public uint GetInstrumentId() => 1;
     }
@@ -32,9 +33,9 @@ namespace MidiBard
     }
     internal sealed class Configuration
     {
-        public bool playOnMultipleDevices = true, AutoAssignEnsembleTracks = true, SyncClients = true, MonitorOnEnsemble = true;
+        public bool playOnMultipleDevices = true, AutoAssignEnsembleTracks = true, SyncClients = true, MonitorOnEnsemble = true, EnableCrossComputerSongSync;
         public bool UpdateInstrumentBeforeReadyCheck, useChatPlaylistSync;
-        public float PlaySpeed;
+        public float PlaySpeed = 1;
         public void SetTransposeGlobal(int value) { }
     }
     internal sealed class Performance { public bool InPerformanceMode = true; }
@@ -84,13 +85,13 @@ namespace MidiBard.Managers
         public static object CurrentContainer = new();
         public static readonly List<int> Loads = [];
         public static TaskCompletionSource? Barrier;
+        public static Task<bool> LoadExternalPlayback(string path, CancellationToken token) => global::MidiBard.Control.MidiControl.FilePlayback.LoadPlayback(path, token);
         public static async Task<bool> LoadPlayback(int index, bool startPlaying = false, bool sync = true, CancellationToken token = default)
         {
             Loads.Add(index);
             if (Barrier != null) await Barrier.Task.WaitAsync(token);
             token.ThrowIfCancellationRequested();
-            MidiBard.CurrentPlayback = new() { FilePath = FilePathList[index].FilePath };
-            return true;
+            return await global::MidiBard.Control.MidiControl.FilePlayback.LoadPlayback(FilePathList[index].FilePath, token);
         }
         public static Task AddAsync(string[] paths) { FilePathList.AddRange(paths.Select(p => new SongStub(p))); return Task.CompletedTask; }
         public static void RemoveLocal(int index) { }
@@ -103,15 +104,37 @@ namespace MidiBard.Managers
         public static bool IsEnabled = true;
         public static string CaptureOrderToken() => "auto=1,2";
         public static bool AcceptOrderToken(string token, ulong leader) => leader == api.PartyList.Leader;
-        public static object Create(object tracks, object config) => new();
+        public static MidiFileConfig Create(object tracks, object config) => new();
         public static IDisposable BeginSoloLoad() => new Scope();
         private sealed class Scope : IDisposable { public void Dispose() { } }
     }
     internal static class MidiFileConfigManager
     {
+        public static bool UsingDefaultPerformer;
         public static void LoadDefaultPerformer() { }
-        public static object GetMidiConfigFromFile(string path) => new();
+        public static MidiFileConfig GetMidiConfigFromFile(string path) => new();
+        public static MidiFileConfig GetMidiConfigFromTrack(TrackInfo[] tracks) => new()
+        { Tracks = tracks.Select((t, i) => new DbTrack { Index = i, Name = t.TrackName, Instrument = 1 }).ToList() };
     }
+    internal sealed class TrackInfo { public string TrackName = "track"; public int? InitialProgram = 1; }
+    internal sealed class MidiFileConfig
+    {
+        public List<DbTrack> Tracks = [];
+        public bool LeaderDistributed, AutomaticallyAssigned, AdaptNotes = true;
+        public float Speed = 1;
+        public GuitarToneMode ToneMode;
+        public static ulong GetFirstCidInParty(DbTrack track) => track.AssignedCids.FirstOrDefault(cid => api.PartyList.Any(p => p.ContentId == cid));
+    }
+    internal sealed class DbTrack
+    {
+        public int Index, Transpose;
+        public string Name = "";
+        public bool Enabled = true;
+        public uint Instrument = 1;
+        public List<ulong> AssignedCids = [];
+    }
+    internal static class AutomaticEnsembleRules
+    { internal static uint ResolveInstrument(string name, uint? saved, int? program) => saved ?? 1; }
     internal static class EnsembleManager
     {
         public static int ReadyCount;
@@ -138,6 +161,20 @@ namespace MidiBard.Control.CharacterControl
 }
 namespace MidiBard.Control.MidiControl
 {
+    internal static class FilePlayback
+    {
+        public static Task<bool> LoadPlayback(string path, CancellationToken token = default)
+        {
+            token.ThrowIfCancellationRequested();
+            var tracks = new global::MidiBard.Managers.TrackInfo[] { new(), new() };
+            var config = global::MidiBard.Managers.DistributedEnsembleAssignment.Current is { } plan
+                ? global::MidiBard.Managers.DistributedEnsembleAssignment.Create(plan, tracks, path)
+                : global::MidiBard.Managers.DistributedEnsembleAssignment.IsDraft
+                    ? global::MidiBard.Managers.DistributedEnsembleAssignment.CreateDraft(tracks, null) : new global::MidiBard.Managers.MidiFileConfig();
+            MidiBard.CurrentPlayback = new() { FilePath = path, MidiFileConfig = config, TrackInfos = tracks };
+            return Task.FromResult(true);
+        }
+    }
     internal static class MidiPlayerControl
     {
         public static void StopLrc() { }
@@ -184,6 +221,7 @@ namespace BardMusicPlayer.XIVMIDI
         public void GetMidiFile(string name, BMLDownload mode, bool bmp) { }
     }
 }
+public enum GuitarToneMode { Off, Standard, Simple, OverrideByTrack, ProgramElectricGuitarMode }
 public class MessageProxy : DispatchProxy
 {
     internal Dictionary<string, object> Values = [];

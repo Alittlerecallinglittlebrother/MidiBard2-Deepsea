@@ -158,15 +158,25 @@ internal static class SwitchInstrument
 
     internal static async Task WaitSwitchInstrumentForSong(string songName)
     {
+        if (global::MidiBard.Managers.DistributedEnsembleAssignment.IsDraft) return;
         // if (MidiBard.CurrentPlayback == null) return;
 
         var config = MidiBard.config;
 
-        if (MidiBard.CurrentPlayback?.MidiFileConfig?.AutomaticallyAssigned == true)
+        if (MidiBard.CurrentPlayback?.MidiFileConfig is { AutomaticallyAssigned: true } or { LeaderDistributed: true })
         {
             MidiBard.CurrentPlayback.SyncTrackStatusWithMidiFileConfig();
             config.TransposeGlobal = 0;
-            await SwitchToAsync(MidiBard.CurrentPlayback.GetInstrumentId());
+            var expectedInstrument = MidiBard.CurrentPlayback.GetInstrumentId();
+            await SwitchToAsync(expectedInstrument);
+            if (MidiBard.CurrentPlayback.MidiFileConfig.LeaderDistributed)
+            {
+                var timer = Stopwatch.StartNew();
+                while (MidiBard.CurrentInstrumentWithTone != expectedInstrument && timer.ElapsedMilliseconds < 3000)
+                    await Task.Delay(25);
+                if (MidiBard.CurrentInstrumentWithTone != expectedInstrument)
+                    throw new InvalidOperationException("未能取出队长分配的乐器，请结束其他操作后重新下发");
+            }
             return;
         }
 

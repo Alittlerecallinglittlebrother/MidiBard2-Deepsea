@@ -7,6 +7,37 @@ using Dalamud.Bindings.ImGui;
 using HexaGen.Runtime;
 using Melanchall.DryWetMidi.Core;
 
+if (args.Length == 2 && args[0] == "--movement-ui")
+{
+    RuntimeUi.RunMovementUi(Path.GetFullPath(args[1]));
+    return;
+}
+if (args.Length == 2 && args[0] == "--movement-check")
+{
+    await MovementRuntimeChecks.Run(Path.GetFullPath(args[1]));
+    return;
+}
+if (args.Length == 2 && args[0] == "--song-sync-check")
+{
+    await SongSyncRuntimeChecks.Run(Path.GetFullPath(args[1]));
+    return;
+}
+if (args.Length == 2 && args[0] == "--manual-assignment-check")
+{
+    await ManualAssignmentRuntimeChecks.Run(Path.GetFullPath(args[1]));
+    return;
+}
+if (args.Length == 2 && args[0] == "--manual-assignment-ui")
+{
+    RuntimeUi.RunManualAssignmentUi(Path.GetFullPath(args[1]));
+    return;
+}
+if (args.Length == 2 && args[0] == "--song-sync-ui")
+{
+    RuntimeUi.RunSongSyncUi(Path.GetFullPath(args[1]));
+    return;
+}
+
 if (args.Length >= 1 && args[0] == "--library-sync-check")
 {
     LibrarySyncRegressionChecks.Run(Path.Combine(Path.GetTempPath(), "BardStage-library-sync-" + Guid.NewGuid()));

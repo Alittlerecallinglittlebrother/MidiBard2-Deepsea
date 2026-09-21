@@ -15,6 +15,15 @@ public sealed partial class MainWindow
     {
         var room = controller.Room!;
         ImGui.TextWrapped(room.ConnectionStatus);
+        if (room.SongSyncEnabled != null)
+        {
+            var sharing = room.SongSyncEnabled();
+            if (ImGui.Checkbox("跨电脑当前歌曲同步", ref sharing)) room.SetSongSyncEnabled?.Invoke(sharing);
+            UiKit.RecordItem("songSyncToggle");
+            ImGui.TextWrapped("主控创建房间，演奏队员使用队员查看邀请码加入；全队开启多设备演奏和歌曲同步。缺少的 MIDI 会自动缓存，个人曲库顺序保持不变。");
+            ImGui.TextWrapped("队长可在原合奏面板关闭自动分配，指定演奏人和乐器后点击“下发歌曲与手动分配”；开启自动分配时沿用自动模式。");
+            if (sharing) ImGui.TextWrapped(room.Songs?.Status ?? "等待选择歌曲");
+        }
         ImGui.Spacing();
         if (!room.IsCaptain && !room.IsRemote)
         {
@@ -75,6 +84,7 @@ public sealed partial class MainWindow
         }
         ImGui.Spacing();
         if (ImGui.Button(room.IsCaptain ? "关闭房间" : "离开房间")) room.Leave();
+        UiKit.RecordItem("roomLeave");
     }
 
     private void DrawSharedLibrary()

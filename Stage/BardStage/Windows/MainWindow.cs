@@ -92,6 +92,7 @@ public sealed partial class MainWindow : Window, IDisposable
             + (!viewer ? TabWidth("曲库") : 0)
             + (controller.Room?.IsRemote != true ? TabWidth("更多") : 0)
             + (controller.Room != null ? TabWidth("演出房间") : 0);
+        if (controller.Room?.Movement != null) tabsWidth += TabWidth("移动与队形");
         // Leave room for text measurement rounding at the right edge.
         var noticeWidth = ImGui.CalcTextSize(PluginNotice).X + 4;
         var noticeInline = tabsWidth + style.ItemSpacing.X * 2 + noticeWidth <= availableWidth;
@@ -141,10 +142,29 @@ public sealed partial class MainWindow : Window, IDisposable
                 ImGui.EndDisabled();
                 ImGui.EndTabItem();
             }
-            if (controller.Room != null && ImGui.BeginTabItem("演出房间"))
+            if (controller.Room != null)
             {
-                if (!noticeInline) DrawPluginNotice();
-                DrawRoom(); ImGui.EndTabItem();
+                var roomTab = ImGui.BeginTabItem("演出房间");
+                UiKit.RecordItem("roomTab");
+                if (roomTab)
+                {
+                    if (!noticeInline) DrawPluginNotice();
+                    if (ImGui.BeginChild("RoomSettings", new Vector2(0, Math.Max(120, ImGui.GetContentRegionAvail().Y - 65 * scale)), false))
+                        DrawRoom();
+                    ImGui.EndChild(); ImGui.EndTabItem();
+                }
+            }
+            if (controller.Room?.Movement != null)
+            {
+                var movementTab = ImGui.BeginTabItem("移动与队形");
+                UiKit.RecordItem("movementTab");
+                if (movementTab)
+                {
+                    if (!noticeInline) DrawPluginNotice();
+                    if (ImGui.BeginChild("MovementPanel", new Vector2(0, Math.Max(120, ImGui.GetContentRegionAvail().Y - 65 * scale)), false))
+                        DrawMovement();
+                    ImGui.EndChild(); UiKit.RecordItem("movementPanel"); ImGui.EndTabItem();
+                }
             }
             ImGui.EndTabBar();
             if (noticeInline)

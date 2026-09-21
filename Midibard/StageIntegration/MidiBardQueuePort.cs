@@ -35,8 +35,10 @@ internal sealed class MidiBardQueuePort : IRoomEnsembleBackend
     {
         var paths = PlaylistManager.FilePathList.Select(s => s.FilePath).ToArray();
         var index = PartySongIdentity.Resolve(paths, -1, hash);
-        return index < 0 ? null : paths[index];
+        return index < 0 ? PartyChatCommand.ResolveTransferredSong(hash) : paths[index];
     }
+    public async Task<string?> ResolveSongAsync(string hash, CancellationToken cancellationToken)
+        => ResolveSong(hash) ?? await PartyChatCommand.RequestTransferredSong(Guid.NewGuid(), hash, cancellationToken);
     public void SendIdentityProof(Guid roomId, string challenge) => PartyChatCommand.SendStageProof(roomId, challenge);
     public bool Adopt(string hash) => AdoptEnsemblePlayback(hash);
     // Owner loads use their cancellation token; follower loads track the actual party leader.
@@ -50,7 +52,8 @@ internal sealed class MidiBardQueuePort : IRoomEnsembleBackend
         if (PlaylistManager.IsLoading) return "等待 MidiBard 完成载入";
         if (SwitchInstrument.SwitchingInstrument) return "等待乐器切换完成";
         if (MidiBard.AgentMetronome.EnsembleModeRunning) return "等待上一首合奏结束";
-        if (!MidiBard.AgentPerformance.InPerformanceMode && !(mode == QueuePlaybackMode.Ensemble && MidiBard.config.AutoAssignEnsembleTracks)) return "等待进入乐器演奏模式";
+        if (!MidiBard.AgentPerformance.InPerformanceMode && !(mode == QueuePlaybackMode.Ensemble
+            && (MidiBard.config.AutoAssignEnsembleTracks || PartyChatCommand.ManualDistributionMode))) return "等待进入乐器演奏模式";
         if (mode == QueuePlaybackMode.Ensemble)
         {
             if (api.PartyList.Length < 2 || !api.PartyList.IsPartyLeader()) return "合奏连播需要由小队队长启动";
@@ -65,25 +68,34 @@ internal sealed class MidiBardQueuePort : IRoomEnsembleBackend
         cancellationToken.ThrowIfCancellationRequested();
         var index = PlaylistManager.FilePathList.FindIndex(s => SamePath(s.FilePath, filePath));
         var remote = mode == QueuePlaybackMode.Ensemble && MidiBard.config.playOnMultipleDevices;
-        if (index < 0)
-        {
-            if (remote) throw new InvalidOperationException("多设备合奏的歌曲必须已在本机播放列表中");
-            await PlaylistManager.AddAsync(new[] { filePath });
-            index = PlaylistManager.FilePathList.FindIndex(s => SamePath(s.FilePath, filePath));
-        }
-        cancellationToken.ThrowIfCancellationRequested();
-        if (index < 0) throw new InvalidOperationException("无法导入 MIDI 文件");
-        bool loaded;
         var party = api.PartyList.PartyId;
         var leader = api.PartyList.GetPartyLeader()?.ContentId ?? 0;
-        if (remote)
+        bool loaded;
+        if (index < 0 && remote)
         {
-            loaded = await PartyChatCommand.SwitchToAsync(index, cancellationToken);
+            // A room handoff may resolve to the private SHA256 cache. It must
+            // be loaded directly so it never mutates the playlist.
+            var cached = PartyChatCommand.ResolveTransferredSong(PartySongIdentity.Hash(filePath));
+            if (cached == null || !SamePath(cached, filePath))
+                throw new InvalidOperationException("本机没有队长选择的 MIDI，请开启当前歌曲分发或手动导入");
+            loaded = await PartyChatCommand.SwitchToPathAsync(filePath, -1, cancellationToken);
         }
         else
         {
-            using var solo = mode == QueuePlaybackMode.Solo ? AutomaticEnsembleAssignment.BeginSoloLoad() : null;
-            loaded = await PlaylistManager.LoadPlayback(index, false, mode == QueuePlaybackMode.Ensemble, cancellationToken);
+            if (index < 0)
+            {
+                await PlaylistManager.AddAsync(new[] { filePath });
+                index = PlaylistManager.FilePathList.FindIndex(s => SamePath(s.FilePath, filePath));
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            if (index < 0) throw new InvalidOperationException("无法导入 MIDI 文件");
+            if (remote)
+                loaded = await PartyChatCommand.SwitchToAsync(index, cancellationToken);
+            else
+            {
+                using var solo = mode == QueuePlaybackMode.Solo ? AutomaticEnsembleAssignment.BeginSoloLoad() : null;
+                loaded = await PlaylistManager.LoadPlayback(index, false, mode == QueuePlaybackMode.Ensemble, cancellationToken);
+            }
         }
         cancellationToken.ThrowIfCancellationRequested();
         if (!loaded || MidiBard.CurrentPlayback == null || !SamePath(MidiBard.CurrentPlayback.FilePath, filePath))
@@ -122,9 +134,10 @@ internal sealed class MidiBardQueuePort : IRoomEnsembleBackend
         RequireLoaded();
         if (mode == QueuePlaybackMode.Solo) { MidiPlayerControl.DoPlay(); return; }
         if (!HasLoadedAuthority) throw new InvalidOperationException("小队队长已改变，请由当前队长重新播放");
+        if (PartyChatCommand.EnsembleLoadIssue is { } issue) throw new InvalidOperationException(issue);
         if (MidiBard.config.AutoAssignEnsembleTracks || MidiBard.config.UpdateInstrumentBeforeReadyCheck)
         {
-            if (MidiBard.CurrentPlayback?.MidiFileConfig is { } config) IPCHandles.UpdateMidiFileConfig(config);
+            if (MidiBard.CurrentPlayback?.MidiFileConfig is { } config && !config.LeaderDistributed) IPCHandles.UpdateMidiFileConfig(config);
             if (MidiBard.config.playOnMultipleDevices) PartyChatCommand.SendUpdateInstrument();
             else IPCHandles.UpdateInstrument(true);
         }

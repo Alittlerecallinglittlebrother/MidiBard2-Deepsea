@@ -43,7 +43,7 @@ public static class FilePlayback
         playback.InterruptNotesOnStop = true;
         playback.TrackNotes = true;
         playback.TrackProgram = true;
-        playback.Speed = MidiBard.config.PlaySpeed;
+        playback.Speed = playback.MidiFileConfig?.LeaderDistributed == true ? playback.MidiFileConfig.Speed : MidiBard.config.PlaySpeed;
         playback.Finished += Playback_Finished;
 
         PluginLog.Debug($"[LoadPlayback] -> {path} OK! in {stopwatch.Elapsed.TotalMilliseconds} ms");
@@ -53,7 +53,9 @@ public static class FilePlayback
             api.ChatGui.Print(String.Format("[MidiBard 2] Now Playing: {0}", playback.DisplayName));
         }
 
-        MidiBard.PluginIpc.MidiBardPlayingFileNamePub.SendMessage(PlaylistManager.GetPostSongName(PlaylistManager.CurrentSongIndex));
+        MidiBard.PluginIpc.MidiBardPlayingFileNamePub.SendMessage(
+            PlaylistManager.IsValidSongIndex(PlaylistManager.CurrentSongIndex)
+                ? PlaylistManager.GetPostSongName(PlaylistManager.CurrentSongIndex) : playback.DisplayName);
         return playback;
     }
 
@@ -61,6 +63,11 @@ public static class FilePlayback
     internal static Status waitStatus = Status.notWaiting;
     private static void Playback_Finished(object sender, EventArgs e)
     {
+        // Received songs have no playlist index. Never advance or mark an
+        // unrelated personal song when their playback finishes.
+        if (sender is BardPlayback received && received.FilePath != null
+            && !PlaylistManager.FilePathList.Any(s => string.Equals(s.FilePath, received.FilePath, StringComparison.OrdinalIgnoreCase)))
+            return;
         if (MidiBard.Stage?.OwnsPlayback(sender) == true)
         {
             if (sender is BardPlayback finished)
@@ -150,6 +157,7 @@ public static class FilePlayback
         catch (Exception e)
         {
             PluginLog.Warning(e.ToString());
+            if (MidiBard.config.EnableCrossComputerSongSync && MidiBard.config.playOnMultipleDevices) throw;
         }
         finally
         {

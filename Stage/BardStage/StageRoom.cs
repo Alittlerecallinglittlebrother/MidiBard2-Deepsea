@@ -43,6 +43,31 @@ public sealed class StageRoom(StageController controller) : IDisposable
     public CatalogState RemoteState => client?.Snapshot?.Catalog ?? empty;
     public RoomPlayback RemotePlayback => client?.Snapshot?.Playback ?? new(false, false, false, false, null, "等待队长同步节目单");
     public Task? TransportCompletion => client?.Completion ?? server?.Completion;
+    public int ConnectionGeneration => client?.Generation ?? 0;
+    public RoomSongSharing? Songs { get; set; }
+    public RoomMovementCoordinator? Movement { get; set; }
+    public Func<bool>? SongSyncEnabled { get; set; }
+    public Action<bool>? SetSongSyncEnabled { get; set; }
+
+    // Song transfer uses the room's authenticated TLS connection.  The room
+    // keeps the peer private; callers only receive the already-authenticated
+    // peer and the validated request packet.
+    public bool TrySongRequest(out RoomPeer peer, out RoomSongRequest request)
+    {
+        if (server?.TrySongRequest(out var value) == true)
+        {
+            peer = value.Peer; request = value.Request; return true;
+        }
+        peer = null!; request = null!; return false;
+    }
+
+    public bool SendSongRequest(RoomSongRequest request) => client?.SendSongRequest(request) == true;
+
+    public bool TrySongPacket(out RoomPacket packet)
+    {
+        if (client != null && client.TrySongPacket(out packet)) return true;
+        packet = null!; return false;
+    }
 
     public bool Create(int port = 28765)
     {
@@ -223,7 +248,8 @@ public sealed class StageRoom(StageController controller) : IDisposable
                 : controller.QueuePlayer?.StatusIsError == true
                     ? controller.LocalPlayback with { Status = "演奏未就绪，请队长检查本机提示" } : controller.LocalPlayback,
             PresenterReceivesChat = PresenterReceivesChat, AuthorityEpoch = Coordinator?.Epoch ?? 0,
-            ExecutorCid = Coordinator?.ExecutorCid ?? 0, ExecutionStatus = Coordinator?.ExecutionIssue ?? "" };
+            ExecutorCid = Coordinator?.ExecutorCid ?? 0, ExecutionStatus = Coordinator?.ExecutionIssue ?? "",
+            MovementSupported = Movement != null };
     }
 
     public void Dispose() { server?.Dispose(); client?.Dispose(); }

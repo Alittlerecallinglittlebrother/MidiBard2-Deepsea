@@ -67,6 +67,10 @@ internal sealed class BardPlayback : Playback
 
     private static MidiFileConfig ResolveMidiConfig(string filePath, TrackChunk[] trackChunks, TrackInfo[] trackInfos)
     {
+        if (DistributedEnsembleAssignment.Current is { } plan)
+            return DistributedEnsembleAssignment.Create(plan, trackInfos, filePath);
+        if (DistributedEnsembleAssignment.IsDraft)
+            return DistributedEnsembleAssignment.CreateDraft(trackInfos, MidiFileConfigManager.GetMidiConfigFromFile(filePath));
         if (AutomaticEnsembleAssignment.IsSoloLoad)
         {
             if (MidiBard.CurrentPlayback?.MidiFileConfig?.AutomaticallyAssigned == true
@@ -358,11 +362,11 @@ internal sealed class BardPlayback : Playback
     {
         // find instrument from config file
         uint? configInstrumentId = MidiFileConfig?.Tracks?
-            .FirstOrDefault(t => t.Enabled && (MidiFileConfig.AutomaticallyAssigned
+            .FirstOrDefault(t => t.Enabled && (MidiFileConfig.AutomaticallyAssigned || MidiFileConfig.LeaderDistributed
                 ? t.AssignedCids.Contains(api.Player.ContentId) : MidiFileConfig.IsCidOnTrack(api.Player.ContentId, t)))
             ?.Instrument;
 
-        if (MidiFileConfig?.AutomaticallyAssigned == true) return configInstrumentId ?? 0;
+        if (MidiFileConfig is { AutomaticallyAssigned: true } or { LeaderDistributed: true }) return configInstrumentId ?? 0;
 
         // find instrument from first enabled track
         uint? trackInstrumentId = TrackInfos?
@@ -419,7 +423,7 @@ internal sealed class BardPlayback : Playback
         {
             try
             {
-                var isBardAssignedToTrack = MidiFileConfig.AutomaticallyAssigned
+                var isBardAssignedToTrack = MidiFileConfig.AutomaticallyAssigned || MidiFileConfig.LeaderDistributed
                     ? tracks[trackIndex].AssignedCids.Contains(api.Player.ContentId)
                     : MidiFileConfig.GetFirstCidInParty(tracks[trackIndex]) == api.Player.ContentId;
                 MidiBard.config.TrackStatus[trackIndex].Enabled = tracks[trackIndex].Enabled && isBardAssignedToTrack;

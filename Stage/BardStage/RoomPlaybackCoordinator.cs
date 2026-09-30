@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Security.Cryptography;
 using BardStage.Core;
 using BardStage.Core.Rooms;
@@ -30,6 +31,7 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
     private readonly Dictionary<Guid, Pending> pending = [];
     private readonly Dictionary<Guid, RoomExecutionResult> clientResults = [];
     private RoomPeer? executor;
+    private RoomClient? observedClient;
     private RoomPartyState observedParty = new(0, 0, 0);
     private Guid observedRoom;
     private RoomExecutionLease? clientLease;
@@ -40,14 +42,16 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
     private long epoch, clientEpoch, normalizedSequence, sourceSequence;
     private Guid lastClientCommand;
     private int clientGeneration;
-    private bool ready, disposed, lastCoordinated;
+    private bool ready, disposed, lastCoordinated, largeModeSuspended;
     private string? issue;
     private DateTimeOffset adoptAfter;
+    private long refreshLeasesAfter;
 
     public RoomPlaybackCoordinator(StageController controller, StageRoom room, IRoomEnsembleBackend backend)
     { this.controller = controller; this.room = room; this.backend = backend; room.Coordinator = this; }
 
-    public bool IsCoordinated => room.IsCaptain && controller.State.RequestSettings.PlaybackMode == QueuePlaybackMode.Ensemble;
+    public bool IsCoordinated => room.LargeEnsemble?.Enabled != true && room.IsCaptain
+        && controller.State.RequestSettings.PlaybackMode == QueuePlaybackMode.Ensemble;
     public long Epoch => epoch;
     public ulong ExecutorCid => ready ? observedParty.LeaderCid : 0;
     public ulong VerifiedMember(RoomPeer peer) => peer.IsAlive && observedRoom == room.Id
@@ -55,7 +59,8 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
     public string? ExecutionIssue => IsCoordinated ? issue ?? (!ready ? "正在确认当前队长的演奏端" : null) : null;
     public string? LocalControlIssue => IsCoordinated && (backend.Party.SelfCid == 0 || backend.Party.SelfCid != backend.Party.LeaderCid)
         ? "队长已转让，本机只读；演出房间继续同步" : null;
-    public bool ClientHasAuthority => room.Connected && clientLease is { Granted: true } lease && ValidParty(lease);
+    public bool ClientHasAuthority => room.LargeEnsemble?.Enabled != true && room.Connected
+        && clientLease is { Granted: true } lease && ValidParty(lease);
     internal Task? LastTransportTask { get; private set; }
     public bool IsPlaying => IsCoordinated && executor != null
         ? controller.QueueShow?.Entries.Any(e => e.Status == EntryStatus.InProgress && !e.PausedAtUtc.HasValue) == true
@@ -74,6 +79,29 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
     public void Tick()
     {
         if (disposed) return;
+        if (room.LargeEnsemble?.Enabled == true)
+        {
+            if (!largeModeSuspended)
+            {
+                // A different playback mode must not inherit an ordinary party
+                // executor. Returning to normal mode performs a fresh handoff.
+                ResetRoom();
+                if (room.IsCaptain)
+                {
+                    epoch++; room.Server!.SetExecutor(null);
+                    PublishExecutionLeases(backend.Party);
+                    controller.InvalidateQueueAuthority();
+                }
+                controller.QueuePlayer?.RevokeControl("独立合奏已开启，普通合奏控制已暂停");
+                largeModeSuspended = true;
+            }
+            signals.Clear();
+            // Still drain/reject ordinary commands and answer identity proofs:
+            // clients may toggle the mode at different times without reconnecting.
+            if (room.IsRemote) TickClient();
+            return;
+        }
+        largeModeSuspended = false;
         DrainSignals();
         if (room.IsRemote) TickClient();
         else if (room.IsCaptain) TickServer();
@@ -84,6 +112,7 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
 
     public string? BlockReason(QueuePlaybackMode mode)
     {
+        if (room.LargeEnsemble?.Enabled == true) return "请在“独立合奏”页面操作";
         if (!IsCoordinated || mode != QueuePlaybackMode.Ensemble) return backend.BlockReason(mode);
         if (ExecutionIssue is { } reason) return reason;
         if (pending.Count != 0) return "等待队长演奏端确认上一条操作";
@@ -92,6 +121,7 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
 
     public Task LoadAsync(string filePath, QueuePlaybackMode mode, CancellationToken cancellationToken)
     {
+        if (room.LargeEnsemble?.Enabled == true) throw new InvalidOperationException("请在“独立合奏”页面操作");
         if (IsCoordinated && mode == QueuePlaybackMode.Ensemble) RequireReady();
         currentHash = backend.Fingerprint(filePath); currentPath = filePath;
         if (mode == QueuePlaybackMode.Ensemble) room.Songs?.Offer(filePath, currentHash);
@@ -110,6 +140,7 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
 
     private void Transport(RoomExecutionAction action, QueuePlaybackMode mode, Action local, bool keep = false)
     {
+        if (room.LargeEnsemble?.Enabled == true) throw new InvalidOperationException("请在“独立合奏”页面操作");
         LastTransportTask = null;
         if (!IsCoordinated || mode != QueuePlaybackMode.Ensemble) { local(); return; }
         RequireReady();
@@ -142,7 +173,8 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
     {
         var server = room.Server!;
         var party = backend.Party;
-        if (observedRoom != room.Id || observedParty.PartyId != party.PartyId)
+        var roomChanged = observedRoom != room.Id;
+        if (roomChanged || observedParty.PartyId != party.PartyId)
         {
             identities.Clear(); observedRoom = room.Id;
         }
@@ -168,9 +200,12 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
         }
         var selected = party.LeaderCid == party.SelfCid ? null
             : identities.FirstOrDefault(p => p.Key.IsAlive && p.Value.Party == party.PartyId && p.Value.Cid == party.LeaderCid).Key;
-        if (party != observedParty || !ReferenceEquals(selected, executor) || lastCoordinated != IsCoordinated)
+        if (roomChanged || party != observedParty || !ReferenceEquals(selected, executor) || lastCoordinated != IsCoordinated)
             ChangeExecutor(party, selected);
         observedParty = party; lastCoordinated = IsCoordinated;
+        // Game party updates can lag the TLS grant or briefly disappear. Re-send
+        // the current grant without changing its epoch or restarting adoption.
+        if (IsCoordinated && Stopwatch.GetTimestamp() >= refreshLeasesAfter) PublishExecutionLeases(party, refreshOnly: true);
         while (server.TryExecution(out var incoming))
         {
             if (!ReferenceEquals(incoming.Peer, executor) || !incoming.Peer.IsAlive || incoming.Packet.RoomId != room.Id) continue;
@@ -193,13 +228,26 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
         foreach (var item in pending.Values) item.Completion.TrySetCanceled();
         pending.Clear();
         room.Server!.SetExecutor(IsCoordinated ? selected : null);
-        foreach (var peer in room.Server.Participants.Where(p => p.Role == RoomRole.Viewer))
-            peer.Peer.Send(new RoomPacket { Type = "executionLease", RoomId = room.Id,
-                Lease = new(epoch, party.PartyId, party.LeaderCid, IsCoordinated && ReferenceEquals(peer.Peer, selected)) });
+        PublishExecutionLeases(party);
         if (IsCoordinated) controller.QueuePlayer?.SuspendForHandoff("正在接管新队长的演奏端");
         adoptAfter = DateTimeOffset.MinValue;
         SetIssue(IsCoordinated ? "正在接管新队长的演奏端" : null);
         controller.InvalidateQueueAuthority();
+    }
+
+    private void PublishExecutionLeases(RoomPartyState party, bool refreshOnly = false)
+    {
+        refreshLeasesAfter = Stopwatch.GetTimestamp() + Stopwatch.Frequency;
+        foreach (var peer in room.Server!.Participants.Where(p => p.Role == RoomRole.Viewer))
+        {
+            if (refreshOnly && !peer.Peer.SupportsAuthorityRefresh) continue;
+            var packet = new RoomPacket { Type = "executionLease", RoomId = room.Id,
+                Lease = new(epoch, party.PartyId, party.LeaderCid, IsCoordinated && ReferenceEquals(peer.Peer, executor)) };
+            // Optional repair traffic may wait for the next interval rather than
+            // disconnect a peer whose queue is occupied by song transfer.
+            if (refreshOnly) peer.Peer.TrySend(packet);
+            else peer.Peer.Send(packet);
+        }
     }
 
     private void AdoptCurrent()
@@ -285,9 +333,9 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
     private void TickClient()
     {
         var client = room.Client!;
-        if (clientGeneration != client.Generation || observedRoom != client.RoomId)
+        if (!ReferenceEquals(observedClient, client) || clientGeneration != client.Generation || observedRoom != client.RoomId)
         {
-            RevokeClient(); clientGeneration = client.Generation; observedRoom = client.RoomId; clientEpoch = 0;
+            RevokeClient(); observedClient = client; clientGeneration = client.Generation; observedRoom = client.RoomId; clientEpoch = 0;
             clientResults.Clear();
         }
         if (clientLease != null && (!room.Connected || !ValidParty(clientLease))) RevokeClient();
@@ -299,10 +347,23 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
                 try { backend.SendIdentityProof(room.Id, proof.Challenge); }
                 catch (Exception ex) { controller.SetStatus("小队身份验证未发送：" + ex.Message, true); }
             }
-            else if (packet.Lease is { } lease && lease.Epoch >= clientEpoch)
+            else if (packet.Lease is { Epoch: > 0 } lease && lease.Epoch >= clientEpoch)
             {
-                RevokeClient(); clientResults.Clear(); clientEpoch = lease.Epoch;
-                if (lease.Granted && ValidParty(lease)) clientLease = lease;
+                if (lease.Epoch > clientEpoch)
+                {
+                    RevokeClient(); clientResults.Clear(); clientEpoch = lease.Epoch;
+                }
+                // An identical refresh is not a handoff: keep a pending load,
+                // playback ownership, and the command de-duplication history.
+                if (!lease.Granted || room.LargeEnsemble?.Enabled == true || !ValidParty(lease))
+                {
+                    if (clientLease != null) RevokeClient();
+                }
+                else if (clientLease != lease)
+                {
+                    if (clientLease != null) RevokeClient();
+                    clientLease = lease;
+                }
             }
             else if (packet.Execution is { } command) ExecuteClient(command);
         }
@@ -457,7 +518,8 @@ public sealed class RoomPlaybackCoordinator : IStagePlaybackPort, IDisposable
 
     private void ResetRoom()
     {
-        backend.Revoke(); ready = false; executor = null; observedRoom = Guid.Empty; lastCoordinated = false;
+        backend.Revoke(); ready = false; executor = null; observedClient = null; observedRoom = Guid.Empty; lastCoordinated = false;
+        refreshLeasesAfter = 0;
         identities.Clear(); RevokeClient();
         foreach (var item in pending.Values) item.Completion.TrySetCanceled();
         pending.Clear(); issue = null;

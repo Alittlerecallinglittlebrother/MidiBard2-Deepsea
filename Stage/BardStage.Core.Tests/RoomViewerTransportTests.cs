@@ -10,6 +10,34 @@ namespace BardStage.Core.Tests;
 public sealed partial class RoomTransportTests
 {
     [Fact]
+    public async Task CurrentClientsAdvertiseIdempotentAuthorityRefresh()
+    {
+        using var server = new RoomServer(0); server.Publish(ViewerFixture(server.RoomId));
+        using var client = new RoomClient(server.Invite("127.0.0.1", server.Port, RoomRole.Viewer));
+        await Until(() => client.Connected);
+        Assert.True(Assert.Single(server.Participants).Peer.SupportsAuthorityRefresh);
+        client.Dispose(); server.Dispose();
+        await Task.WhenAll(client.Completion, server.Completion).WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    public async Task AuthorityRefreshRequiresExplicitSupportedHelloCapability(int version, bool expected)
+    {
+        using var server = new RoomServer(0); server.Publish(ViewerFixture(server.RoomId));
+        var invite = server.Invite("127.0.0.1", server.Port, RoomRole.Viewer);
+        using var socket = new TcpClient(); await socket.ConnectAsync(invite.Host, invite.Port);
+        using var stream = await Authenticate(socket, invite);
+        await Write(stream, new() { Type = "hello", RoomId = invite.RoomId, Key = invite.Key,
+            Role = RoomRole.Viewer, AuthorityRefreshVersion = version });
+        await ReadPacket(stream);
+        Assert.Equal(expected, Assert.Single(server.Participants).Peer.SupportsAuthorityRefresh);
+        server.Dispose(); await server.Completion.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
     public async Task SevenViewersShareUpdatesWithoutOccupyingPresenterAndFreedSlotsCanRejoin()
     {
         using var server = new RoomServer(0);

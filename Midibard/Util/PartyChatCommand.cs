@@ -49,6 +49,22 @@ internal static partial class PartyChatCommand
 
     internal static void OnChatMessage(Dalamud.Game.Chat.IHandleableChatMessage message)
     {
+        if (StageIntegration.MidiBardLargeEnsembleBackend.Active)
+        {
+            if (message.LogKind != XivChatType.Party) return;
+            var text = SeString.Parse(message.OriginalMessage.Data.Span).TextValue;
+            var proof = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (proof.Length == 3 && proof[0] == "mblargeproof" && Guid.TryParseExact(proof[1], "N", out var room)
+                && proof[2].Length == 32 && proof[2].All(Uri.IsHexDigit))
+            {
+                var sender = SeString.Parse(message.OriginalSender.Data.Span);
+                var link = sender.Payloads.OfType<PlayerPayload>().FirstOrDefault();
+                var candidates = StageIntegration.MidiBardLargeEnsembleBackend.ReadMembers().Where(m => link != null
+                    ? m.Name == link.PlayerName && m.World == link.World.RowId : m.Name == sender.TextValue).ToArray();
+                if (candidates.Length == 1) StageIntegration.MidiBardLargeEnsembleBackend.ReceiveProof(room, proof[2], candidates[0].Cid);
+            }
+            return;
+        }
         if (message.LogKind != XivChatType.Party)
             return;
 
@@ -159,13 +175,14 @@ internal static partial class PartyChatCommand
         {
             if (HandleSelectionRequest(args, songIndex - 1)) return;
             MidiPlayerControl.StopLrc();
-            _ = LoadPartyPlayback(songIndex - 1);
+            _ = LoadPartyPlayback(songIndex - 1, args.FirstOrDefault(a => a.StartsWith("auto=", StringComparison.Ordinal)));
             MidiBard.Ui.OpenMainWindow();
         }
     }
 
-    private static async System.Threading.Tasks.Task LoadPartyPlayback(int index)
+    private static async System.Threading.Tasks.Task LoadPartyPlayback(int index, string order)
     {
+        using var automatic = AutomaticEnsembleAssignment.BeginLeaderSelection(order, api.PartyList.GetPartyLeader()?.ContentId ?? 0);
         if (index < 0 || index >= PlaylistManager.FilePathList.Count) return;
         var path = PlaylistManager.FilePathList[index].FilePath;
         var success = false;
@@ -336,16 +353,23 @@ internal static partial class PartyChatCommand
     {
         if (MidiBard.CurrentPlayback == null)
         {
+            api.ChatGui.PrintError("[MidiBard] 尚未载入队长的歌曲，无法取出乐器；请由队长重新选曲");
             return;
         }
 
-        if (args.Any(arg => arg.StartsWith("auto=", StringComparison.Ordinal)) && AutomaticEnsembleAssignment.IsEnabled
+        if (args.Any(arg => arg.StartsWith("auto=", StringComparison.Ordinal))
             && MidiBard.CurrentPlayback.MidiFileConfig?.LeaderDistributed != true)
             MidiBard.CurrentPlayback.MidiFileConfig = AutomaticEnsembleAssignment.Create(
                 MidiBard.CurrentPlayback.TrackInfos, MidiFileConfigManager.GetMidiConfigFromFile(MidiBard.CurrentPlayback.FilePath));
 
         MidiBard.CurrentPlayback.SyncTrackStatusWithMidiFileConfig();
         uint instrumentId = MidiBard.CurrentPlayback.GetInstrumentId();
+
+        if (instrumentId == 0)
+        {
+            api.ChatGui.PrintError("[MidiBard] 本角色没有已启用的演奏轨道或乐器；请队长检查分配后重新下发");
+            return;
+        }
 
         SwitchInstrument.SwitchToContinue(instrumentId);
     }

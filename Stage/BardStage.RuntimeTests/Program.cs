@@ -7,6 +7,56 @@ using Dalamud.Bindings.ImGui;
 using HexaGen.Runtime;
 using Melanchall.DryWetMidi.Core;
 
+if (args.Length == 1 && args[0] == "--public-capacity-check")
+{ LocalEnsembleRuntimeChecks.LocalCapacityChecks(); return; }
+
+if (args.Length == 2 && args[0] == "--authority-refresh-check")
+{
+    var work = Path.GetFullPath(args[1]); Directory.CreateDirectory(work);
+    var midi = Path.Combine(work, "authority-refresh.mid");
+    if (!File.Exists(midi)) new MidiFile(new TrackChunk(new NoteOnEvent((Melanchall.DryWetMidi.Common.SevenBitNumber)60,
+        (Melanchall.DryWetMidi.Common.SevenBitNumber)80), new NoteOffEvent((Melanchall.DryWetMidi.Common.SevenBitNumber)60,
+        (Melanchall.DryWetMidi.Common.SevenBitNumber)0) { DeltaTime = 1920 })).Write(midi);
+    HandoffRuntimeChecks.RunAuthorityRefresh(work, midi); return;
+}
+
+if (args.Length == 2 && args[0] == "--network-timing-check")
+{ await LocalEnsembleRuntimeChecks.RunNetwork(Path.GetFullPath(args[1])); return; }
+if (args.Length == 2 && args[0] == "--workspace-ui")
+{ RuntimeUi.RunWorkspaceUi(Path.GetFullPath(args[1])); return; }
+
+if (args.Length == 2 && args[0] == "--local-ensemble-worker")
+{ await LocalEnsembleRuntimeChecks.Worker(args[1]); return; }
+if (args.Length == 2 && args[0] == "--local-ensemble-check")
+{ await LocalEnsembleRuntimeChecks.Run(Path.GetFullPath(args[1])); return; }
+if (args.Length == 2 && args[0] == "--local-ensemble-ui")
+{ RuntimeUi.RunLocalEnsembleUi(Path.GetFullPath(args[1])); return; }
+
+if (args.Length == 2 && args[0] == "--queue-tail-check")
+{
+    var work = Path.GetFullPath(args[1]); Directory.CreateDirectory(work);
+    var midi = Path.Combine(work, "tail.mid");
+    if (!File.Exists(midi)) new MidiFile(new TrackChunk(new NoteOnEvent((Melanchall.DryWetMidi.Common.SevenBitNumber)60,
+        (Melanchall.DryWetMidi.Common.SevenBitNumber)80), new NoteOffEvent((Melanchall.DryWetMidi.Common.SevenBitNumber)60,
+        (Melanchall.DryWetMidi.Common.SevenBitNumber)0) { DeltaTime = 96 })).Write(midi);
+    AutoQueueRuntimeChecks.Run(work, midi);
+    PlaybackRuntimeChecks.Run(work, midi);
+    HandoffRuntimeChecks.Run(work, midi);
+    return;
+}
+
+if (args.Length == 2 && args[0] == "--large-ensemble-ui")
+{
+    RuntimeUi.RunLargeEnsembleUi(Path.GetFullPath(args[1]));
+    return;
+}
+
+if (args.Length == 2 && args[0] == "--large-ensemble-check")
+{
+    await LargeEnsembleRuntimeChecks.Run(Path.GetFullPath(args[1]));
+    return;
+}
+
 if (args.Length == 2 && args[0] == "--movement-ui")
 {
     RuntimeUi.RunMovementUi(Path.GetFullPath(args[1]));
@@ -163,6 +213,7 @@ CleanupRuntimeChecks.Run(scratch, midiPath);
 LibraryRuntimeChecks.Run(scratch, midiPath);
 LibrarySyncRegressionChecks.Run(Path.Combine(scratch, "sync-regression"));
 AuthorityRuntimeChecks.Run(scratch, midiPath);
+HandoffRuntimeChecks.RunAuthorityRefresh(scratch, midiPath);
 HandoffRuntimeChecks.Run(scratch, midiPath);
 RuntimeUi.Run(controller, output);
 RuntimeUi.RunAuthorityChecks(midiPath, output);
@@ -355,7 +406,7 @@ internal static unsafe partial class RuntimeUi
     {
         ImGui.GetIO().DisplaySize = new Vector2(width, height);
         ImGui.NewFrame(); ImGui.SetNextWindowPos(Vector2.Zero); ImGui.SetNextWindowSize(new Vector2(width, height));
-        ImGui.Begin("midibard2-深海回响特供版 · 自动点歌##Runtime", ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+        ImGui.Begin("midibard2-深海回响改 · 演出助手##Runtime", ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
         window.Draw(); ImGui.End(); ImGui.Render();
         if (ImGui.GetDrawData().TotalVtxCount == 0) throw new InvalidOperationException("blank ImGui frame");
     }

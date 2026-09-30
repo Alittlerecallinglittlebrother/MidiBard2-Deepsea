@@ -80,6 +80,7 @@ internal sealed unsafe class MidiBardMovementBackend : IRoomMovementBackend
     }
     private string? BlockReason()
     {
+        if (MidiBardLargeEnsembleBackend.Active) return "请先关闭多人合奏模式再使用小队移动";
         if (fault != null) return fault;
         if (!api.ClientState.IsLoggedIn || api.ObjectTable.LocalPlayer == null) return "等待角色登录";
         if (MidiBard.SlaveMode) return "请在本机独立演奏端使用移动";

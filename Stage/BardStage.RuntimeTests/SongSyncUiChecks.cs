@@ -1,4 +1,4 @@
-using BardStage;
+﻿using BardStage;
 using BardStage.Windows;
 using Dalamud.Bindings.ImGui;
 using HexaGen.Runtime;
@@ -47,6 +47,7 @@ internal static unsafe partial class RuntimeUi
             io.AddMousePosEvent(450, 350); io.AddMouseWheelEvent(0, -15);
             Frame(window, 760, 540); Frame(window, 760, 540);
             SoftwareRenderer.Save(Path.Combine(output, "song-sync-room-small-scrolled.png"));
+            ShowItem(window,"roomLeave",760,540);
             ClickItem(window, "roomLeave", 760, 540);
             if (controller.Room.IsCaptain) throw new InvalidOperationException("compact room leave button is unreachable");
             Console.WriteLine("PASS: native room toggle defaults off, responds to clicks and renders at normal/compact sizes");

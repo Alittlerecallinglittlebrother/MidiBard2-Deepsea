@@ -11,14 +11,16 @@ internal static class DistributedEnsembleAssignment
 {
     private static readonly AsyncLocal<RoomSongPlan?> current = new();
     private static readonly AsyncLocal<bool> draft = new();
+    private static readonly AsyncLocal<bool> largeMode = new();
     internal static RoomSongPlan? Current => current.Value;
     internal static bool IsDraft => draft.Value;
+    internal static bool IsLarge => largeMode.Value;
 
-    internal static IDisposable Begin(RoomSongPlan? plan, bool editing = false)
+    internal static IDisposable Begin(RoomSongPlan? plan, bool editing = false, bool large = false)
     {
-        var previous = current.Value; var previousDraft = draft.Value;
-        current.Value = plan; draft.Value = editing;
-        return new Scope(() => { current.Value = previous; draft.Value = previousDraft; });
+        var previous = current.Value; var previousDraft = draft.Value; var previousLarge = largeMode.Value;
+        current.Value = plan; draft.Value = editing; largeMode.Value = large;
+        return new Scope(() => { current.Value = previous; draft.Value = previousDraft; largeMode.Value = previousLarge; });
     }
     private sealed class Scope(Action restore) : IDisposable { public void Dispose() => restore(); }
 
@@ -57,7 +59,7 @@ internal static class DistributedEnsembleAssignment
 
     internal static MidiFileConfig Create(RoomSongPlan plan, TrackInfo[] tracks, string path)
     {
-        Validate(plan);
+        if (largeMode.Value) plan.Validate(LargePlan.MaxPlayers); else Validate(plan);
         if (tracks.Length != plan.Tracks.Length || !string.Equals(PartySongIdentity.Hash(path), plan.SongHash, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("手动分配与载入的 MIDI 不一致，请重新下发");
         var result = MidiFileConfigManager.GetMidiConfigFromTrack(tracks);

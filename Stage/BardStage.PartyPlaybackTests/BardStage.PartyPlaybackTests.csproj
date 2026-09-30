@@ -7,10 +7,16 @@
     <DalamudLibPath Condition="'$(DalamudLibPath)' == ''">$(APPDATA)/XIVLauncherCN/addon/Hooks/dev/</DalamudLibPath>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Melanchall.DryWetMidi" Version="7.2.0" />
+    <Compile Include="../../Midibard/Managers/AutomaticEnsembleAssignment.cs" Link="Production/AutomaticEnsembleAssignment.cs" />
+    <Compile Include="../../Midibard/Managers/AutomaticEnsembleRules.cs" Link="Production/AutomaticEnsembleRules.cs" />
+    <Compile Include="../BardStage.Core/PlaybackTailGuard.cs" Link="Production/PlaybackTailGuard.cs" />
+    <Compile Include="../BardStage.Core/PlaybackTimingDiagnostics.cs" Link="Production/PlaybackTimingDiagnostics.cs" />
     <Compile Include="../../Midibard/Util/PartyChatCommand*.cs" Link="Production/%(Filename)%(Extension)" />
     <Compile Include="../../Midibard/Managers/PartySongLoad.cs" Link="Production/PartySongLoad.cs" />
     <Compile Include="../../Midibard/Managers/DistributedEnsembleAssignment.cs" Link="Production/DistributedEnsembleAssignment.cs" />
     <Compile Include="../BardStage.Core/Rooms/RoomSongPlan.cs" Link="Production/RoomSongPlan.cs" />
+    <Compile Include="../BardStage.Core/Rooms/LargeEnsemble.cs" Link="Production/LargeEnsemble.cs" />
     <Compile Include="../../Midibard/StageIntegration/MidiBardQueuePort.cs" Link="Production/MidiBardQueuePort.cs" />
     <Reference Include="Dalamud;Lumina;Lumina.Excel;FFXIVClientStructs;InteropGenerator.Runtime">
       <HintPath>$(DalamudLibPath)%(Identity).dll</HintPath>

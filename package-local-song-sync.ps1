@@ -5,14 +5,14 @@ $null = New-Item -ItemType Directory -Path $outputPath -Force
 $binaryPath = Join-Path $PSScriptRoot 'Midibard/bin/Release'
 $manifest = Get-Content -LiteralPath (Join-Path $binaryPath 'MidiBard2.json') -Raw | ConvertFrom-Json
 $version = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $binaryPath 'MidiBard2.dll')).Version.ToString()
-if ($version -ne '3.2.5.24' -or $manifest.AssemblyVersion -ne $version -or $manifest.DalamudApiLevel -ne 15) {
-    throw 'Build the 3.2.5.24 / API 15 Release first.'
+if ($version -ne '3.2.5.33' -or $manifest.AssemblyVersion -ne $version -or $manifest.DalamudApiLevel -ne 15) {
+    throw 'Build the 3.2.5.33 / API 15 Release first.'
 }
-if ($manifest.Name -cne 'midibard2-深海回响特供版' -or $manifest.Author -cne 'akira0245, Ori, Kalle, Zune, 断水剑, SevenCat') {
+if ($manifest.Name -cne 'midibard2-深海回响改' -or $manifest.Author -cne 'akira0245, Ori, Kalle, Zune, 断水剑, SevenCat') {
     throw 'Unexpected branding or author order.'
 }
-$pluginZip = Join-Path $outputPath 'MidiBard2-Deepsea-3.2.5.24-local.zip'
-$sourceZip = Join-Path $outputPath 'MidiBard2-Deepsea-3.2.5.24-local-source.zip'
+$pluginZip = Join-Path $outputPath 'MidiBard2.zip'
+$sourceZip = Join-Path $outputPath 'MidiBard2-source.zip'
 foreach ($path in @($pluginZip, $sourceZip)) { if (Test-Path -LiteralPath $path) { throw "Output already exists: $path" } }
 function Add-ZipFile($archive, [string]$path, [string]$entry) {
     $null = [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $path, $entry.Replace('\', '/'), [IO.Compression.CompressionLevel]::Optimal)
@@ -25,7 +25,7 @@ try {
             Add-ZipFile $archive $_.FullName $relative
         }
     }
-    foreach ($name in @('LICENSE', 'LOCAL-SONG-SYNC.md', 'STAGE-README.md', 'STAGE-ROOM.md', 'STAGE-IPC.md', 'LOCAL-VERIFICATION.md', 'LOCAL-MANUAL-ASSIGNMENT.md', 'LOCAL-MOVEMENT.md')) {
+    foreach ($name in @('README.md', 'THIRD-PARTY-NOTICES.md', 'LICENSE', 'LOCAL-SONG-SYNC.md', 'STAGE-README.md', 'STAGE-ROOM.md', 'STAGE-IPC.md', 'LOCAL-VERIFICATION.md', 'LOCAL-MANUAL-ASSIGNMENT.md', 'LOCAL-LARGE-ENSEMBLE.md', 'LOCAL-MOVEMENT.md', 'LOCAL-TAIL-FIX.md', 'LOCAL-LARGE-COMPENSATION.md', 'LOCAL-SAME-COMPUTER.md', 'LOCAL-TIMING-FIX.md', 'LOCAL-AUTHORITY-FIX.md', 'LOCAL-NOTE-RECOVERY.md', 'LOCAL-FIRST-USE.md')) {
         Add-ZipFile $archive (Join-Path $PSScriptRoot $name) $name
     }
     Add-ZipFile $archive (Join-Path $PSScriptRoot 'Stage/THIRD-PARTY-NOTICES.txt') 'STAGE-THIRD-PARTY-NOTICES.txt'
@@ -35,8 +35,8 @@ $archive = [IO.Compression.ZipFile]::Open($sourceZip, [IO.Compression.ZipArchive
 try {
     Get-ChildItem -LiteralPath $PSScriptRoot -Recurse -File -Force | ForEach-Object {
         $relative = [IO.Path]::GetRelativePath($PSScriptRoot, $_.FullName).Replace('\', '/')
-        if ($relative -notmatch '(^|/)(\.git|bin|obj|verification|artifacts)(/|$)' -and $_.Extension -notin @('.log', '.zip')) {
-            Add-ZipFile $archive $_.FullName ('MidiBard2-Deepsea-3.2.5.24-local/' + $relative)
+        if ($relative -notmatch '(^|/)(\.git|bin|obj|verification|artifacts|work)(/|$)' -and $_.Extension -notin @('.log', '.zip')) {
+            Add-ZipFile $archive $_.FullName ('MidiBard2-Deepsea-3.2.5.33/' + $relative)
         }
     }
 }

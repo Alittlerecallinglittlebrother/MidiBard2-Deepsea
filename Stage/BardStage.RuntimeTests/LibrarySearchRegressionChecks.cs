@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using BardStage;
 using BardStage.Core;
 using BardStage.Windows;
@@ -60,7 +60,7 @@ internal static unsafe partial class RuntimeUi
             };
             using var window = new MainWindow(controller);
             Render(); Render();
-            Click(window, 93, 73); Render(); Render();
+            NavigateUi(window,"libraryTab"); Render(); Render();
             Verify(searchSeen && visibleSongs.Count == 2, "local library search and both songs render before synchronization");
             ClickItem(window, "librarySearch"); Render();
             Verify(searchActive, "real mouse click focuses local library search");

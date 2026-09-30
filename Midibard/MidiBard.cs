@@ -62,7 +62,19 @@ public partial class MidiBard : IDalamudPlugin
     internal static PluginUI Ui { get; set; }
     internal static StageIntegration.StageFeature Stage { get; private set; }
     // internal static WindowSystem WindowSystem { get; set; }
-    internal static BardPlayback CurrentPlayback { get; set; }
+    private static BardPlayback currentPlayback;
+    internal static BardPlayback CurrentPlayback
+    {
+        get => currentPlayback;
+        set
+        {
+            // Revoke delayed output before a replacement can change tracks or
+            // instruments, including replacements outside the large-mode UI.
+            if (!ReferenceEquals(currentPlayback, value) && currentPlayback is { } previous && previous.LargePlanId != Guid.Empty)
+                BardPlayDevice?.CancelLargePlaybackOutput(previous.LargePlanId);
+            currentPlayback = value;
+        }
+    }
     internal static AgentMetronome AgentMetronome { get; set; }
     internal static AgentPerformance AgentPerformance { get; set; }
     internal static EnsembleManager EnsembleManager { get; set; }
@@ -90,7 +102,7 @@ public partial class MidiBard : IDalamudPlugin
     internal static TimeSpan? CurrentPlaybackTime => CurrentPlayback?.GetCurrentTime<MetricTimeSpan>().GetTimeSpan();
     internal static TimeSpan? CurrentPlaybackDuration => CurrentPlayback?.GetDuration<MetricTimeSpan>().GetTimeSpan();
 
-    public string Name => "MidiBard 2";
+    public string Name => "midibard2-深海回响改";
 
     public unsafe MidiBard(IDalamudPluginInterface pi)
     {

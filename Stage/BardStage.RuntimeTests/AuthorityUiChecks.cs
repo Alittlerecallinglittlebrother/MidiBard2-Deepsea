@@ -1,4 +1,4 @@
-using BardStage;
+﻿using BardStage;
 using BardStage.Core;
 using BardStage.Windows;
 using Dalamud.Bindings.ImGui;
@@ -27,7 +27,7 @@ internal static unsafe partial class RuntimeUi
             if (!io.Fonts.Build()) throw new InvalidOperationException("Handoff font atlas failed");
             ImGui.StyleColorsDark();
             using var window = new MainWindow(controller);
-            items.Clear(); Frame(window, 1100, 740); Frame(window, 1100, 740);
+            items.Clear(); NavigateUi(window,"queueTab");
             if (items.ContainsKey("queuePlay")) throw new InvalidOperationException("Viewer received playback controls before promotion");
             promote(); items.Clear(); Frame(window, 1100, 740); Frame(window, 1100, 740);
             if (!items.ContainsKey("queuePause")) throw new InvalidOperationException("Promoted viewer did not receive playback controls");
@@ -84,6 +84,7 @@ internal static unsafe partial class RuntimeUi
             ImGui.StyleColorsDark();
             using var window = new MainWindow(controller);
             Frame(window, 1100, 740); Frame(window, 1100, 740);
+            NavigateUi(window,"queueTab");
             ClickItem(window, "queuePlay"); controller.Poll(); player.Tick();
             if (player.IsRunning || port.StartCalls != 0 || controller.CanEditQueue)
                 throw new InvalidOperationException("Read-only ensemble play button remained active");

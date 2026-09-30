@@ -50,6 +50,7 @@ internal static class SwitchInstrument
             catch (Exception e)
             {
                 PluginLog.Error(e, "Error when switching instrument");
+                api.ChatGui.PrintError("[MidiBard] 取出乐器失败：" + e.Message);
             }
         });
     }
@@ -80,6 +81,7 @@ internal static class SwitchInstrument
         catch (Exception e)
         {
             PluginLog.Error(e, $"instrument switching failed in {sw.Elapsed.TotalMilliseconds} ms");
+            api.ChatGui.PrintError("[MidiBard] 取出乐器失败，请结束移动或其他操作后重试：" + e.Message);
         }
         finally
         {
@@ -169,7 +171,7 @@ internal static class SwitchInstrument
             config.TransposeGlobal = 0;
             var expectedInstrument = MidiBard.CurrentPlayback.GetInstrumentId();
             await SwitchToAsync(expectedInstrument);
-            if (MidiBard.CurrentPlayback.MidiFileConfig.LeaderDistributed)
+            if (expectedInstrument != 0)
             {
                 var timer = Stopwatch.StartNew();
                 while (MidiBard.CurrentInstrumentWithTone != expectedInstrument && timer.ElapsedMilliseconds < 3000)

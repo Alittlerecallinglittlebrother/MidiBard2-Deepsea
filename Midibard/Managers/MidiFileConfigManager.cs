@@ -84,7 +84,9 @@ namespace MidiBard.Managers
                     fileContent = sr.ReadToEnd();
                     // remove unwanted -1 from cid
                     fileContent = Sanitizer.SanitizeMidiFileConfig(fileContent, songPath);
-                    config = JsonConvert.DeserializeObject<MidiFileConfig>(fileContent, JsonSerializerSettings);
+                    var candidate = JsonConvert.DeserializeObject<MidiFileConfig>(fileContent, JsonSerializerSettings);
+                    candidate?.ValidatePerformerLimit();
+                    config = candidate;
                 }
             }
             catch (Exception e)
@@ -373,6 +375,16 @@ namespace MidiBard.Managers
         // Only the current playback uses a received plan; never overwrite the receiver's sidecar.
         [Newtonsoft.Json.JsonIgnore]
         public bool LeaderDistributed;
+
+        internal void ValidatePerformerLimit()
+        {
+            // Manual sidecars can retain alternative characters from past parties.
+            // Only automatic/distributed mappings directly enable every assigned CID.
+            if (!AutomaticallyAssigned && !LeaderDistributed) return;
+            if (Tracks.Where(t => t.Enabled).SelectMany(t => t.AssignedCids).Where(cid => cid != 0)
+                .Distinct().Take(BardStage.Core.Rooms.LargePlan.MaxPlayers + 1).Count() > BardStage.Core.Rooms.LargePlan.MaxPlayers)
+                throw new InvalidOperationException("多人合奏最多 8 人，请减少本次分配的演奏人");
+        }
 
         internal static bool IsCidOnTrack(ulong cid, DbTrack track)
         {

@@ -76,6 +76,7 @@ Check(Chat.Sent.Count == 0, "deferred proof cannot leak into a different party")
 Chat.DeferMessages = false;
 
 api.Player.ContentId = 2;
+Plugin.config.AutoAssignEnsembleTracks = false;
 PlaylistManager.Loads.Clear(); Chat.Sent.Clear();
 var hash = PartySongIdentity.Hash(song);
 var remoteId = Guid.NewGuid();
@@ -83,10 +84,19 @@ Receive("Leader", $"switchto 1 load={remoteId:N} song={hash} auto=1,2");
 Check(PlaylistManager.Loads.SequenceEqual([1]) && Plugin.CurrentPlayback!.FilePath == song,
     "different playlist order resolves by MIDI content instead of the wrong index");
 Check(Chat.Sent.Any(s => s == $"/p mbloadresult {remoteId:N} ok"), "member confirms its actual local load");
+Check(Plugin.CurrentPlayback!.MidiFileConfig.AutomaticallyAssigned
+    && Plugin.CurrentPlayback.MidiFileConfig.Tracks[1].AssignedCids.SequenceEqual(new ulong[] { 2 })
+    && Plugin.CurrentPlayback.GetInstrumentId() != 0,
+    "member with automatic setting OFF receives the leader's track and playable instrument");
+Check(!Plugin.config.AutoAssignEnsembleTracks && !AutomaticEnsembleAssignment.IsEnabled,
+    "leader assignment does not change the saved member preference or leak outside selection");
 Receive("Leader", $"switchto 1 load={remoteId:N} song={hash} auto=1,2");
 Check(PlaylistManager.Loads.Count == 1, "duplicate remote selection is idempotent");
 Receive("Member", $"switchto 1 load={Guid.NewGuid():N} song={hash} auto=1,2");
 Check(PlaylistManager.Loads.Count == 1, "a non-leader cannot select an ensemble song");
+foreach (var invalid in new[] { "auto=nope", "auto=1,3", "auto=1,1" })
+    Receive("Leader", $"switchto 1 load={Guid.NewGuid():N} song={hash} {invalid}");
+Check(PlaylistManager.Loads.Count == 1, "malformed or stale leader order cannot load or enable automatic assignment");
 var missingId = Guid.NewGuid();
 Receive("Leader", $"switchto 1 load={missingId:N} song={new string('A', 64)} auto=1,2");
 Check(Chat.Sent.Contains($"/p mbloadresult {missingId:N} missing") && PlaylistManager.Loads.Count == 1,
@@ -107,6 +117,18 @@ while (typeof(PartyChatCommand).GetField("activeLoad", BindingFlags.NonPublic | 
 Check(Chat.Sent.Contains($"/p mbloadresult {followerId:N} ok"),
     "follower confirms loading despite a later room authority notification");
 PlaylistManager.Barrier = null;
+Check(Plugin.CurrentPlayback!.MidiFileConfig.AutomaticallyAssigned && !Plugin.config.AutoAssignEnsembleTracks
+    && !AutomaticEnsembleAssignment.IsEnabled, "leader scope survives async loading and is restored afterwards");
+using (AutomaticEnsembleAssignment.BeginLeaderSelection("auto=1,2", 1))
+{
+    Check(AutomaticEnsembleAssignment.IsEnabled, "authenticated same-computer selection uses leader scope too");
+    using (AutomaticEnsembleAssignment.BeginSoloLoad())
+        Check(!AutomaticEnsembleAssignment.IsEnabled, "explicit solo load overrides leader scope");
+    AutomaticEnsembleAssignment.AcceptOrderToken("auto=2,1", 1);
+    Check(AutomaticEnsembleAssignment.GetCurrentOrder().SequenceEqual(new ulong[] { 1,2 }),
+        "another received selection cannot replace an in-flight selection's member order");
+}
+Plugin.config.AutoAssignEnsembleTracks = true;
 
 api.Player.ContentId = 1;
 var failure = port.LoadAsync(song, QueuePlaybackMode.Ensemble, CancellationToken.None);
@@ -286,6 +308,55 @@ Receive("Member", $"mbloadresult {publishedPlan!.Id:N} ok");
 await repeatManual;
 Check(PartyChatCommand.EnsembleLoadIssue == null && PlaylistManager.FilePathList.Count == 0,
     "manual queue selection can redistribute an existing cache-only configuration");
+
+var largeId = Guid.NewGuid();
+var largePlan = new RoomSongPlan(largeId, hash, 0, 1, Enumerable.Range(1,8).Select(i => (ulong)i).ToArray(),
+    Enumerable.Range(0,8).Select(i => new RoomTrackAssignment(i,true,2,i == 7 ? -12 : 0,(ulong)i + 1)).ToArray(),1,true,3);
+using (DistributedEnsembleAssignment.Begin(largePlan,large:true))
+{
+    var config = DistributedEnsembleAssignment.Create(largePlan,Enumerable.Range(0,8).Select(_=>new MidiBard.Managers.TrackInfo()).ToArray(),cachePath);
+    Check(config.LeaderDistributed && config.Tracks[7].AssignedCids.Single()==8 && config.Tracks[7].Transpose==-12,
+        "shared load scope preserves all eight selected performers outside the local small party");
+}
+try
+{
+    DistributedEnsembleAssignment.Create(largePlan,Enumerable.Range(0,8).Select(_=>new MidiBard.Managers.TrackInfo()).ToArray(),cachePath);
+    throw new Exception("large scope leaked to normal party load");
+}
+catch (InvalidDataException) { Check(true,"leaving large load scope restores ordinary eight-member validation"); }
+foreach(var count in new[]{9,16})
+{
+    var oversized=largePlan with
+    {
+        Members=Enumerable.Range(1,count).Select(i=>(ulong)i).ToArray(),
+        Tracks=Enumerable.Range(0,count).Select(i=>new RoomTrackAssignment(i,true,2,0,(ulong)i+1)).ToArray()
+    };
+    using(DistributedEnsembleAssignment.Begin(oversized,large:true))
+    {
+        try
+        {
+            DistributedEnsembleAssignment.Create(oversized,Enumerable.Range(0,count).Select(_=>new MidiBard.Managers.TrackInfo()).ToArray(),cachePath);
+            throw new Exception($"shared load scope accepted {count} performers");
+        }
+        catch(InvalidDataException) { Check(true,$"shared load scope cannot bypass the public eight-person limit with {count} performers"); }
+    }
+}
+
+var tailPort = new MidiBardQueuePort();
+EnsembleManager.EnsembleRunning = false;
+Check(tailPort.CreateFinishBarrier(Plugin.CurrentPlayback!) == null, "ordinary solo EOF does not add ensemble tail protection");
+EnsembleManager.EnsembleRunning = true;
+Plugin.BardPlayDevice.PlaybackOutputState = (2, 6);
+var barrier = tailPort.CreateFinishBarrier(Plugin.CurrentPlayback!);
+Check(barrier != null && !barrier(), "production ensemble completion blocks while output events remain queued");
+Plugin.BardPlayDevice.PlaybackOutputState = (0, 6);
+var tailClock = System.Diagnostics.Stopwatch.StartNew();
+Check(!barrier!(), "drained buffer begins the six-second ensemble allowance");
+await Task.Delay(TimeSpan.FromSeconds(6.05));
+Check(barrier!() && tailClock.Elapsed.TotalSeconds >= 6, "production completion allows finish only after the six-second protection");
+Check(tailPort.CreateFinishBarrier(new Melanchall.DryWetMidi.Multimedia.Playback()) == null,
+    "old playback cannot create a completion barrier for its replacement");
+EnsembleManager.EnsembleRunning = false;
 
 static void Receive(string sender, string text, bool handled = false)
 {

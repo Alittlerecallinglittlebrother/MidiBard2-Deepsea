@@ -100,7 +100,7 @@ public partial class PluginUI
             var playerName = api.Player.CharacterName;
             var playerWorld = api.Player.HomeWorld.ValueNullable?.Name.ToDalamudString().TextValue ?? "";
             var playerInfo = MidiBard.config.hidePlayerInformationFromUi ? "" : $"{playerName}@{playerWorld}";
-            var title = $"midibard2-深海回响特供版 v{MidiBard.VersionString}";
+            var title = $"midibard2-深海回响改 v{MidiBard.VersionString}";
             var name = title + " ###MIDIBARD";
             var windowFlags = MidiBard.config.miniPlayer ? ImGuiWindowFlags.NoDecoration : ImGuiWindowFlags.None;
 
@@ -147,11 +147,7 @@ public partial class PluginUI
                     DrawButtonPlayMode(disabled: ensembleRunning);
                     DrawButtonShowSettingsWindow();
                     DrawButtonVisualization();
-                    DrawButtonShowEnsembleWindow(disabled: !api.PartyList.IsPartyLeader());
-                    if (!api.PartyList.IsPartyLeader())
-                    {
-                        ShowEnsembleWindow = false;
-                    }
+                    DrawButtonShowEnsembleWindow(disabled: false);
                 }
                 ImGuiUtil.PopIconButtonSize();
                 ImGui.PopStyleVar();
@@ -163,8 +159,7 @@ public partial class PluginUI
                     DrawMusicControlPanel();
                     DrawFooter();
                     ImGui.Separator();
-                    if (ImGuiUtil.IconButton(FontAwesomeIcon.ClipboardList, "##stageManagement", "自动点歌")) MidiBard.Stage?.Open();
-                    ImGui.SameLine(); ImGui.TextUnformatted("自动点歌");
+                    if (ImGui.Button("演出助手（点歌 / 合奏）##stageManagement")) MidiBard.Stage?.Open();
                     ImGui.SameLine();
                     if (ImGui.Button("联系作者##contactAuthor")) Util.Extensions.OpenUrl(BardStage.StageController.AuthorWebsite);
                     if (ImGui.IsItemHovered()) ImGui.SetTooltip(BardStage.StageController.AuthorWebsite);

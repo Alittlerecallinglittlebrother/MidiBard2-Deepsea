@@ -12,12 +12,14 @@ public sealed class RoomServer : IDisposable
 {
     public const int MaxViewers = 7;
     private readonly TcpListener listener;
+    private readonly Func<double>? clock;
     private readonly CancellationTokenSource lifetime = new();
     private readonly X509Certificate2 certificate;
     private readonly byte[] secret = RandomNumberGenerator.GetBytes(32);
     private readonly byte[] viewerSecret = RandomNumberGenerator.GetBytes(32);
-    private readonly SemaphoreSlim handshakes = new(MaxViewers + 1 + 4);
-    private readonly SemaphoreSlim viewerSlots = new(MaxViewers);
+    private readonly SemaphoreSlim handshakes;
+    private readonly SemaphoreSlim viewerSlots;
+    public int ViewerCapacity { get; }
     private readonly ConcurrentDictionary<RoomPeer, byte> viewers = new();
     private readonly ConcurrentDictionary<TcpClient, Task> connections = new();
     private readonly ConcurrentQueue<(RoomPeer Peer, RoomCommand Command)> commands = new();
@@ -25,6 +27,7 @@ public sealed class RoomServer : IDisposable
     private readonly ConcurrentQueue<(RoomPeer Peer, RoomSongRequest Request)> songRequests = new();
     private readonly ConcurrentQueue<(RoomPeer Peer, RoomPacket Packet)> planPackets = new();
     private readonly ConcurrentQueue<(RoomPeer Peer, RoomPacket Packet)> movementPackets = new();
+    private readonly ConcurrentQueue<(RoomPeer Peer, LargeEnvelope Value)> largePackets = new();
     private readonly ConcurrentDictionary<RoomPeer, RoomRole> participants = new();
     private RoomPeer? executor;
     private RoomPeer? presenter;
@@ -47,10 +50,16 @@ public sealed class RoomServer : IDisposable
     public bool TrySongRequest(out (RoomPeer Peer, RoomSongRequest Request) value) => songRequests.TryDequeue(out value);
     public bool TryPlanPacket(out (RoomPeer Peer, RoomPacket Packet) value) => planPackets.TryDequeue(out value);
     public bool TryMovement(out (RoomPeer Peer, RoomPacket Packet) value) => movementPackets.TryDequeue(out value);
+    public bool TryLarge(out (RoomPeer Peer, LargeEnvelope Value) value) => largePackets.TryDequeue(out value);
     public RoomSnapshot SnapshotFor(RoomPeer peer, RoomSnapshot value) => CanControl(peer) ? value.ForController() : value.ForViewer();
 
-    public RoomServer(int port = 28765)
+    public RoomServer(int port = 28765, int maxViewers = MaxViewers, Func<double>? clock = null)
     {
+        this.clock = clock;
+        if (maxViewers != MaxViewers)
+            throw new ArgumentOutOfRangeException(nameof(maxViewers), "演奏房间最多 7 名队员和 1 名主控");
+        ViewerCapacity = maxViewers; viewerSlots = new(maxViewers);
+        handshakes = new(maxViewers + 1 + 4);
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var request = new CertificateRequest("CN=MidiBard-Room", key, HashAlgorithmName.SHA256);
         using var generated = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(7));
@@ -59,7 +68,7 @@ public sealed class RoomServer : IDisposable
         try { certificate = X509CertificateLoader.LoadPkcs12(pfx, null, X509KeyStorageFlags.UserKeySet); }
         finally { CryptographicOperations.ZeroMemory(pfx); }
         listener = new TcpListener(IPAddress.Loopback, port);
-        try { listener.Start(MaxViewers + 4); }
+        try { listener.Start(maxViewers + 4); }
         catch { certificate.Dispose(); throw; }
         Completion = AcceptLoop();
     }
@@ -80,6 +89,8 @@ public sealed class RoomServer : IDisposable
 
     public void Publish(RoomSnapshot value)
     {
+        if (value.LargeEnsembleSupported && value.PerformerCapacity > LargePlan.MaxPlayers)
+            throw new InvalidDataException("独立合奏最多 8 人，不支持扩展演奏房间容量");
         Volatile.Write(ref snapshot, value);
         var view = value.ForViewer();
         Volatile.Write(ref viewerSnapshot, view);
@@ -127,7 +138,8 @@ public sealed class RoomServer : IDisposable
             var hello = await RoomWire.Read(stream, timeout.Token, 4096);
             if (hello.Type != "hello" || hello.RoomId != RoomId || hello.Key?.Length != 64 || !Enum.IsDefined(hello.Role)
                 || !CryptographicOperations.FixedTimeEquals(Convert.FromHexString(hello.Key), hello.Role == RoomRole.Viewer ? viewerSecret : secret)) return;
-            peer = new RoomPeer(socket, stream, lifetime.Token, 16 * 1024);
+            peer = new RoomPeer(socket, stream, lifetime.Token, 16 * 1024, clock)
+                { SupportsAuthorityRefresh = hello.AuthorityRefreshVersion == 1 };
             if (hello.Role == RoomRole.Viewer)
             {
                 if (!viewerSlots.Wait(0)) return;
@@ -139,6 +151,11 @@ public sealed class RoomServer : IDisposable
             if (current != null) peer.Send(new RoomPacket { Type = "snapshot", Snapshot = current, Role = hello.Role });
             await peer.Run(packet =>
             {
+                if (packet.Type == "largePoll" && hello.Role == RoomRole.Viewer && packet.RoomId == RoomId && packet.Large != null)
+                {
+                    if (largePackets.Count >= 128) { peer.Dispose(); return; }
+                    largePackets.Enqueue((peer, packet.Large)); return;
+                }
                 if (packet.Type is "movementPoll" or "movementSubmit" && hello.Role == RoomRole.Viewer && packet.RoomId == RoomId && packet.Movement != null)
                 {
                     if (movementPackets.Count >= 64) { peer.Dispose(); return; }
@@ -169,7 +186,7 @@ public sealed class RoomServer : IDisposable
                 commands.Enqueue((peer, packet.Command));
             });
         }
-        catch (Exception ex) when (ex is IOException or AuthenticationException or OperationCanceledException or ObjectDisposedException
+        catch (Exception ex) when (ex is IOException or InvalidDataException or AuthenticationException or OperationCanceledException or ObjectDisposedException
             or SocketException or System.Text.Json.JsonException or FormatException or CryptographicException or ArgumentException)
         { Volatile.Write(ref lastConnectionError, ex.ToString()); }
         finally

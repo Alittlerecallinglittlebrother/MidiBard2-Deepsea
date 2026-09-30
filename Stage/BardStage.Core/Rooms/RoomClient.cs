@@ -10,12 +10,16 @@ namespace BardStage.Core.Rooms;
 public sealed class RoomClient : IDisposable
 {
     private readonly RoomInvite invite;
+    private readonly Func<double>? clock;
+    public TransportClockState Timing => Volatile.Read(ref peer)?.Clock.State ?? TransportClockState.Unavailable;
+    public RoomPacket? LatestLarge => Volatile.Read(ref peer)?.LatestLarge;
     private readonly CancellationTokenSource lifetime = new();
     private readonly ConcurrentQueue<RoomResult> results = new();
     private readonly ConcurrentQueue<RoomPacket> executionPackets = new();
     private readonly ConcurrentQueue<RoomPacket> songPackets = new();
     private readonly ConcurrentQueue<RoomPlanResult> planResults = new();
     private readonly ConcurrentQueue<MovementEnvelope> movementFrames = new();
+    private readonly ConcurrentQueue<LargeEnvelope> largeFrames = new();
     private RoomPeer? peer;
     private TcpClient? connecting;
     private RoomSnapshot? snapshot;
@@ -30,8 +34,8 @@ public sealed class RoomClient : IDisposable
     public Guid RoomId => invite.RoomId;
     public bool CanControl => Role == RoomRole.Presenter || Snapshot?.CanControl == true;
 
-    public RoomClient(RoomInvite invite)
-    { invite.Validate(); this.invite = invite; Completion = ConnectLoop(); }
+    public RoomClient(RoomInvite invite, Func<double>? clock = null)
+    { invite.Validate(); this.invite = invite; this.clock = clock; Completion = ConnectLoop(); }
 
     public bool Send(RoomCommand command) => CanControl && Connected
         && Volatile.Read(ref peer)?.Send(new RoomPacket { Type = "command", Command = command }) == true;
@@ -47,6 +51,13 @@ public sealed class RoomClient : IDisposable
     public bool SendMovement(string type, MovementEnvelope value) => Connected && Role == RoomRole.Viewer
         && Volatile.Read(ref peer)?.Send(new() { Type = type, RoomId = RoomId, Movement = value }) == true;
     public bool TryMovement(out MovementEnvelope value) => movementFrames.TryDequeue(out value!);
+    public bool SendLarge(LargeEnvelope value)
+    {
+        value.ValidateCapacity();
+        return Connected && Role == RoomRole.Viewer
+            && Volatile.Read(ref peer)?.Send(new() { Type = "largePoll", RoomId = RoomId, Large = value }) == true;
+    }
+    public bool TryLarge(out LargeEnvelope value) => largeFrames.TryDequeue(out value!);
 
     private async Task ConnectLoop()
     {
@@ -68,19 +79,25 @@ public sealed class RoomClient : IDisposable
                     TargetHost = "MidiBard-Room", EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
                     CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
                 }, timeout.Token);
-                await RoomWire.Write(stream, new RoomPacket { Type = "hello", Key = invite.Key, RoomId = invite.RoomId, Role = invite.Role }, timeout.Token);
-                session = new RoomPeer(socket, stream, lifetime.Token);
+                await RoomWire.Write(stream, new RoomPacket { Type = "hello", Key = invite.Key, RoomId = invite.RoomId,
+                    Role = invite.Role, AuthorityRefreshVersion = 1 }, timeout.Token);
+                session = new RoomPeer(socket, stream, lifetime.Token, clock: clock);
                 Volatile.Write(ref snapshot, null);
                 executionPackets.Clear();
                 songPackets.Clear();
                 planResults.Clear();
                 movementFrames.Clear();
+                largeFrames.Clear();
                 Volatile.Write(ref peer, session);
                 Interlocked.Increment(ref generation);
                 await session.Run(packet =>
                 {
                     if (packet.Type == "snapshot" && packet.Role == Role && packet.Snapshot is { } value && value.RoomId == invite.RoomId)
-                    { AcceptSnapshot(value); Volatile.Write(ref status, Role == RoomRole.Viewer ? "已连接队长 · 只读" : "已连接队长"); attempt = 0; }
+                    {
+                        AcceptSnapshot(value);
+                        if (value.TimingVersion >= 1) session.EnableClock();
+                        Volatile.Write(ref status, Role == RoomRole.Viewer ? "已连接队长 · 只读" : "已连接队长"); attempt = 0;
+                    }
                     else if (packet.Type == "result" && packet.Result is { } result && packet.Snapshot is { } confirmed
                         && confirmed.RoomId == invite.RoomId && results.Count < 128)
                     { AcceptSnapshot(confirmed); results.Enqueue(result); }
@@ -88,6 +105,9 @@ public sealed class RoomClient : IDisposable
                         && packet.RoomId == invite.RoomId && songPackets.Count < 4
                         && (packet.Type == "songResult" || packet.SongChunk?.Data is { Length: <= 65536 }))
                         songPackets.Enqueue(packet);
+                    else if (Role == RoomRole.Viewer && packet.Type == "largeFrame" && packet.RoomId == invite.RoomId
+                        && packet.Large is { } large && largeFrames.Count < 32)
+                        largeFrames.Enqueue(large);
                     else if (Role == RoomRole.Viewer && packet.Type == "movementFrame" && packet.RoomId == invite.RoomId
                         && packet.Movement is { } movement && movementFrames.Count < 16)
                         movementFrames.Enqueue(movement);
@@ -99,9 +119,10 @@ public sealed class RoomClient : IDisposable
                     else session.Dispose();
                 });
             }
-            catch (Exception ex) when (ex is IOException or AuthenticationException or OperationCanceledException or ObjectDisposedException
+            catch (Exception ex) when (ex is IOException or InvalidDataException or AuthenticationException or OperationCanceledException or ObjectDisposedException
                 or SocketException or System.Text.Json.JsonException or FormatException)
-            { Volatile.Write(ref status, ex is AuthenticationException ? "房间身份校验失败，请核对邀请口令与隧道认证" : "连接中断，正在重连队长"); }
+            { Volatile.Write(ref status, ex is InvalidDataException ? ex.Message
+                : ex is AuthenticationException ? "房间身份校验失败，请核对邀请口令与隧道认证" : "连接中断，正在重连队长"); }
             finally
             {
                 session?.Dispose();

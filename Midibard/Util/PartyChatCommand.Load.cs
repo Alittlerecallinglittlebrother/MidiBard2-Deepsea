@@ -188,15 +188,16 @@ internal static partial class PartyChatCommand
         if (requestText == null) return false;
         var hash = args.FirstOrDefault(a => a.StartsWith("song=", StringComparison.Ordinal));
         if (Guid.TryParseExact(requestText[5..], "N", out var id) && hash != null && RememberLoad(id))
-            _ = ReceiveSelection(preferred, id, hash[5..], manual);
+            _ = ReceiveSelection(preferred, id, hash[5..], manual, args.FirstOrDefault(a => a.StartsWith("auto=", StringComparison.Ordinal)));
         return true;
     }
 
     private static Guid receivingRequest;
-    private static async Task ReceiveSelection(int preferred, Guid request, string hash, bool manual = false)
+    private static async Task ReceiveSelection(int preferred, Guid request, string hash, bool manual = false, string? order = null)
     {
         var party = api.PartyList.PartyId;
         var leader = api.PartyList.GetPartyLeader()?.ContentId ?? 0;
+        using var automatic = AutomaticEnsembleAssignment.BeginLeaderSelection(manual ? null : order, leader);
         var cancellation = BeginLoad(CancellationToken.None);
         cancellation.CancelAfter(TimeSpan.FromSeconds(manual ? 160 : 110));
         receivingRequest = request;

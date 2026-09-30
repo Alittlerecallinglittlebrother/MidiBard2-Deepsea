@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Reflection;
 using Dalamud.Bindings.ImGui;
 using HexaGen.Runtime;
@@ -30,7 +30,7 @@ internal static unsafe partial class RuntimeUi
                     { Index = i, Name = $"声部 {i + 1}", Enabled = true, Instrument = 2, AssignedCids = [1] }).ToList() }
             };
             Vector2 min = default, max = default;
-            MidiBard.PluginUI.EnsembleItemBounds = (_, a, b) => { min = a; max = b; };
+            MidiBard.PluginUI.EnsembleItemBounds = (id, a, b) => { if(id=="manualDistribute") { min = a; max = b; } };
             foreach (var (width, height, scale) in new[] { (1100, 740, 1f), (760, 540, 1.4f) })
             {
                 MidiBard.PluginUI.LogPath = Path.Combine(output, $"manual-{width}.log");
@@ -40,6 +40,7 @@ internal static unsafe partial class RuntimeUi
                 {
                     io.DisplaySize = new(width, height);
                     ImGui.NewFrame(); ImGui.SetNextWindowPos(Vector2.Zero); ImGui.SetNextWindowSize(new(width, height));
+                    ImGui.LogToFile(-1,MidiBard.PluginUI.LogPath);
                     draw.Invoke(window, null); ImGui.LogFinish(); ImGui.Render();
                 }
                 Frame(); Frame();

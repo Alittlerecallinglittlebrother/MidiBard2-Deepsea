@@ -5,10 +5,15 @@ public sealed record RoomTrackAssignment(int Index, bool Enabled, uint Instrumen
 public sealed record RoomSongPlan(Guid Id, string SongHash, long PartyId, ulong LeaderCid,
     ulong[] Members, RoomTrackAssignment[] Tracks, float Speed, bool AdaptNotes, int ToneMode)
 {
-    public void Validate()
+    public void Validate() => Validate(8);
+    public void Validate(int maxMembers)
     {
+        if (maxMembers != LargePlan.MaxPlayers)
+            throw new ArgumentOutOfRangeException(nameof(maxMembers), "演奏计划最多 8 人，不支持扩展人数上限");
+        if (Members is { Length: > LargePlan.MaxPlayers })
+            throw new InvalidDataException("演奏计划最多 8 人，拒绝超过 8 人的旧分配");
         if (Id == Guid.Empty || SongHash is not { Length: 64 } || !SongHash.All(Uri.IsHexDigit)
-            || LeaderCid == 0 || Members is not { Length: >= 2 and <= 8 }
+            || LeaderCid == 0 || Members == null || Members.Length < 2 || Members.Length > maxMembers
             || Members.Any(cid => cid == 0) || Members.Distinct().Count() != Members.Length || !Members.Contains(LeaderCid))
             throw new InvalidDataException("手动分配的小队或歌曲信息无效");
         if (Tracks is not { Length: >= 1 and <= 100 } || !float.IsFinite(Speed) || Speed is < 0.1f or > 10f

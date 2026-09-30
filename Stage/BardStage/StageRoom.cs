@@ -6,6 +6,7 @@ namespace BardStage;
 
 public sealed class StageRoom(StageController controller) : IDisposable
 {
+    internal Func<double>? TimingClock { get; set; }
     private RoomServer? server;
     private RoomClient? client;
     private readonly CatalogState empty = new();
@@ -24,7 +25,8 @@ public sealed class StageRoom(StageController controller) : IDisposable
     internal RoomClient? Client => client;
     public bool HasRemoteControl => client?.CanControl == true && (IsPresenter || Coordinator?.ClientHasAuthority == true);
     public bool IsCaptain => server != null;
-    public string? HostingBlockReason => IsCaptain ? Coordinator?.IsCoordinated == true ? Coordinator.ExecutionIssue : CanHost?.Invoke() : null;
+    public string? HostingBlockReason => IsCaptain ? LargeEnsemble?.Enabled == true ? LargeEnsemble.Context.Validate()
+        : Coordinator?.IsCoordinated == true ? Coordinator.ExecutionIssue : CanHost?.Invoke() : null;
     public bool IsRemote => client != null;
     public bool IsPresenter => client?.Role == RoomRole.Presenter;
     public bool IsViewer => client?.Role == RoomRole.Viewer;
@@ -38,7 +40,7 @@ public sealed class StageRoom(StageController controller) : IDisposable
     public int LocalPort => server?.Port ?? 28765;
     public string ConnectionStatus => IsCaptain
         ? HostingBlockReason is { } issue ? "房间控制已暂停 · " + issue
-            : $"演出房间 · {(HasPresenter ? "主持人已连接" : "等待主持人")} · 队员 {ViewerCount}/{RoomServer.MaxViewers}"
+            : $"演出房间 · {(HasPresenter ? "主持人已连接" : "等待主持人")} · 队员 {ViewerCount}/{server!.ViewerCapacity}"
         : IsViewer ? HasRemoteControl ? "当前队长 · 已接管演出控制" : "队员查看 · " + client!.Status : client?.Status ?? "本地模式";
     public CatalogState RemoteState => client?.Snapshot?.Catalog ?? empty;
     public RoomPlayback RemotePlayback => client?.Snapshot?.Playback ?? new(false, false, false, false, null, "等待队长同步节目单");
@@ -46,6 +48,7 @@ public sealed class StageRoom(StageController controller) : IDisposable
     public int ConnectionGeneration => client?.Generation ?? 0;
     public RoomSongSharing? Songs { get; set; }
     public RoomMovementCoordinator? Movement { get; set; }
+    public RoomLargeEnsemble? LargeEnsemble { get; set; }
     public Func<bool>? SongSyncEnabled { get; set; }
     public Action<bool>? SetSongSyncEnabled { get; set; }
 
@@ -73,11 +76,12 @@ public sealed class StageRoom(StageController controller) : IDisposable
     {
         try
         {
+            if (LargeEnsemble?.LocalMode == true) throw new InvalidOperationException("同机多开无需房间；跨电脑演奏请先切换连接方式");
             if (IsCaptain || IsRemote) throw new InvalidOperationException("请先关闭或离开当前房间");
             if (controller.IsReadOnly || controller.IsBusy) throw new InvalidOperationException("曲库只读或正在导入，暂时不能创建房间");
             if (CanHost?.Invoke() is { } reason) throw new InvalidOperationException(reason);
             if (!controller.EnsureAutomaticQueue()) return false;
-            server = new RoomServer(port); completed.Clear(); publishedRevision = -1; publishedHostIssue = null;
+            server = new RoomServer(port, RoomServer.MaxViewers, TimingClock); completed.Clear(); publishedRevision = -1; publishedHostIssue = null;
             Tick(true);
             controller.SetStatus("演出房间已创建");
             return true;
@@ -91,6 +95,7 @@ public sealed class StageRoom(StageController controller) : IDisposable
     {
         try
         {
+            if (LargeEnsemble?.LocalMode == true) throw new InvalidOperationException("同机多开无需房间；跨电脑演奏请先切换连接方式");
             if (IsCaptain || IsRemote) throw new InvalidOperationException("请先关闭或离开当前房间");
             var invite = RoomInvite.Decode(invitation);
             if (expectedRole.HasValue && expectedRole.Value != invite.Role)
@@ -104,7 +109,7 @@ public sealed class StageRoom(StageController controller) : IDisposable
                 throw new InvalidOperationException(invite.Role == RoomRole.Viewer
                     ? "请先停止本机自动点歌连播，完成导入并保存待处理记录，再进入队员查看"
                     : "请先停止本机演奏，完成导入并保存待处理记录，再进入主持人模式");
-            client = new RoomClient(invite);
+            client = new RoomClient(invite, TimingClock);
             generation = 0; wasConnected = false;
             controller.SetStatus("正在连接演出房间");
             return true;
@@ -249,7 +254,8 @@ public sealed class StageRoom(StageController controller) : IDisposable
                     ? controller.LocalPlayback with { Status = "演奏未就绪，请队长检查本机提示" } : controller.LocalPlayback,
             PresenterReceivesChat = PresenterReceivesChat, AuthorityEpoch = Coordinator?.Epoch ?? 0,
             ExecutorCid = Coordinator?.ExecutorCid ?? 0, ExecutionStatus = Coordinator?.ExecutionIssue ?? "",
-            MovementSupported = Movement != null };
+            TimingVersion = 1, MovementSupported = Movement != null, LargeEnsembleSupported = LargeEnsemble != null,
+            PerformerCapacity = LargePlan.MaxPlayers };
     }
 
     public void Dispose() { server?.Dispose(); client?.Dispose(); }

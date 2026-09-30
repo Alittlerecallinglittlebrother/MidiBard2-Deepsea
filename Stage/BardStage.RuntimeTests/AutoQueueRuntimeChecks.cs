@@ -11,6 +11,60 @@ internal static class AutoQueueRuntimeChecks
     {
         using (var f = new Fixture(scratch, midiPath))
         {
+            f.Controller.Change(s => s.RequestSettings.PlaybackMode = QueuePlaybackMode.Ensemble);
+            f.Port.HoldOutputTail = true;
+            f.Request("One", "First"); f.Request("Two", "Second"); f.Controller.Poll(); f.Player.Start();
+            f.Until(() => f.Port.EngineFinished);
+            Check(f.Port.FinishCalls == 0 && f.Port.Starts.Count == 1 && f.Show.Entries[0].Status == EntryStatus.InProgress,
+                "engine Finished must not stop ensemble or advance while its output tail is pending");
+            f.Port.HoldOutputTail = false;
+            f.Until(() => f.Show.Entries[1].Status == EntryStatus.Completed);
+            Check(f.Port.FinishCalls == 2, "drained songs finish and advance exactly once");
+        }
+        foreach (var skip in new[] { false, true })
+        using (var f = new Fixture(scratch, midiPath))
+        {
+            f.Controller.Change(s => s.RequestSettings.PlaybackMode = QueuePlaybackMode.Ensemble);
+            f.Port.HoldOutputTail = true;
+            f.Request("One", "First"); f.Request("Two", "Second"); f.Controller.Poll(); f.Player.Start();
+            f.Until(() => f.Port.EngineFinished);
+            if (skip) f.Player.Skip(); else f.Player.Stop();
+            f.Port.HoldOutputTail = false; f.Pump();
+            Check(f.Show.Entries[0].Status == EntryStatus.Skipped && f.Port.FinishCalls == 0,
+                (skip ? "skip" : "stop") + " during output tail cancels pending natural completion immediately");
+            if (skip)
+            {
+                f.Until(() => f.Show.Entries[1].Status == EntryStatus.Completed);
+                Check(f.Port.FinishCalls == 1 && f.Port.Starts.Count == 2, "skip tail never finishes an old playback after the next song starts");
+            }
+            else Check(!f.Player.IsRunning && f.Port.Starts.Count == 1, "stop tail leaves next request queued");
+        }
+        using (var f = new Fixture(scratch, midiPath))
+        {
+            f.Controller.Change(s => { s.RequestSettings.PlaybackMode = QueuePlaybackMode.Ensemble; s.Setlists[0].GapSeconds = 4; });
+            f.Port.HoldOutputTail = true;
+            f.Request("One", "First"); f.Request("Two", "Second"); f.Controller.Poll(); f.Player.Start();
+            f.Until(() => f.Port.EngineFinished);
+            f.Time = f.Time.AddMinutes(1); f.Pump();
+            Check(f.Port.FinishCalls == 0, "song gap cannot expire the unfinished output tail");
+            f.Port.HoldOutputTail = false; f.Pump();
+            Check(f.Port.FinishCalls == 1 && f.Port.Starts.Count == 1, "configured gap starts only after protected completion");
+            f.Time = f.Time.AddSeconds(5);
+            f.Until(() => f.Show.Entries[1].Status == EntryStatus.Completed);
+        }
+        using (var f = new Fixture(scratch, midiPath))
+        {
+            f.Controller.Change(s => s.RequestSettings.PlaybackMode = QueuePlaybackMode.Ensemble);
+            f.Port.HoldOutputTail = true;
+            f.Request("One", "First"); f.Controller.Poll(); f.Player.Start();
+            f.Until(() => f.Show.Entries[0].Status == EntryStatus.InProgress); f.Player.SetContinuous(false);
+            f.Until(() => f.Port.EngineFinished);
+            Check(f.Port.FinishCalls == 0, "single queued song keeps its tail when continuous mode is disabled");
+            f.Port.HoldOutputTail = false; f.Pump();
+            Check(f.Port.FinishCalls == 1 && !f.Player.IsRunning, "single queued song finishes once after tail protection");
+        }
+        using (var f = new Fixture(scratch, midiPath))
+        {
             f.Request("One", "First"); f.Request("Two", "Second"); f.Controller.Poll();
             Check(f.Show.Entries.Select(e => e.Title).SequenceEqual(new[] { "First", "Second" }), "chat requests automatically persist a FIFO queue");
             f.Player.Start(); f.Until(() => f.Show.Entries.All(e => e.Status == EntryStatus.Completed));
@@ -141,10 +195,10 @@ internal static class AutoQueueRuntimeChecks
                 s.Setlists[0].GapSeconds = 0;
             });
             Controller.EnsureAutomaticQueue(); Controller.SetReception(true);
-            Port = new EnginePort(Controller); Player = new AutoQueuePlayer(Controller, Port, () => Time); Controller.QueuePlayer = Player;
+            Port = new EnginePort(Controller, observeTail: true); Player = new AutoQueuePlayer(Controller, Port, () => Time); Controller.QueuePlayer = Player;
         }
         public void Request(string name, string title) => Controller.ReceiveChat(new IncomingChatRequest(RequestChannel.Say, name, "", title, DateTimeOffset.UtcNow, Show.Id));
-        public void Pump() { Controller.Poll(); Player.Tick(); }
+        public void Pump() { Port.PollOutput(); Controller.Poll(); Player.Tick(); }
         public void Until(Func<bool> condition)
         {
             var end = DateTime.UtcNow.AddSeconds(7);
@@ -162,10 +216,16 @@ internal static class AutoQueueRuntimeChecks
         private string path = "";
         public readonly List<string> Starts = [];
         public bool FailLoad, DelayStart;
+        public bool HoldOutputTail, EngineFinished;
         public TaskCompletionSource? LoadGate;
         public int StartCalls, FinishCalls;
         public int DurationTicks = 64;
-        public EnginePort(StageController controller) { this.controller = controller; observer = new PlaybackObserver(controller.ReceivePlayback); }
+        public EnginePort(StageController controller, bool observeTail = false)
+        {
+            this.controller = controller;
+            observer = new PlaybackObserver(controller.ReceivePlayback, observeTail ? _ => () => !HoldOutputTail : null);
+        }
+        public void PollOutput() => observer.Poll();
         public bool IsPlaying => playback?.IsRunning == true;
         public string? BlockReason(QueuePlaybackMode mode) => null;
         public async Task LoadAsync(string filePath, QueuePlaybackMode mode, CancellationToken cancellationToken)
@@ -173,10 +233,12 @@ internal static class AutoQueueRuntimeChecks
             if (LoadGate != null) await LoadGate.Task;
             if (FailLoad) throw new IOException("test load failure");
             playback?.Dispose(); path = filePath;
+            EngineFinished = false;
             playback = new MidiFile(new TrackChunk(new NoteOnEvent((SevenBitNumber)60, (SevenBitNumber)80),
                 new NoteOffEvent((SevenBitNumber)60, (SevenBitNumber)0) { DeltaTime = DurationTicks }))
                 { TimeDivision = new TicksPerQuarterNoteTimeDivision(96) }.GetPlayback();
             observer.Attach(playback, path);
+            playback.Finished += (_, _) => EngineFinished = true;
         }
         public void Start(QueuePlaybackMode mode) { StartCalls++; if (!DelayStart) BeginActualPlayback(); }
         public void BeginActualPlayback() { Starts.Add(controller.State.Songs.First(s => s.FilePath == path).Title); playback!.Start(); }

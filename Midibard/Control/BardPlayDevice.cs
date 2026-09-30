@@ -18,6 +18,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using BardStage.Core;
+using BardStage.Core.Rooms;
 
 using Melanchall.DryWetMidi.Common;
 using Melanchall.DryWetMidi.Core;
@@ -32,7 +34,7 @@ using static Dalamud.api;
 
 namespace MidiBard.Control;
 
-public class BardPlayDevice : IOutputDevice
+public partial class BardPlayDevice : IOutputDevice
 {
     private static GuitarToneMode PlaybackToneMode => MidiBard.CurrentPlayback?.MidiFileConfig is { LeaderDistributed: true }
         ? GuitarToneMode.OverrideByTrack : MidiBard.config.GuitarToneMode;
@@ -45,84 +47,237 @@ public class BardPlayDevice : IOutputDevice
         public int EventValueTransposed => EventValue >= 0 ? BardPlayDevice.GetNoteNumberTranslatedByTrack(EventValue, TrackIndex) : EventValue;
     }
     private readonly MidiClock PlaybackTicker;
-    private readonly List<(MidiEvent, MidiPlaybackMetaData)>[] MidiEventsBuffer;
-    const int BufferLength = 500;
-
-    public BardPlayDevice()
+    private readonly PriorityQueue<OutputEvent, (double Due, int Order, long Sequence)> pending = new();
+    private readonly object outputGate = new();
+    private readonly Func<double> nowClock;
+    private int largePending;
+    private long outputRevision, sequence, dispatched, faults;
+    private double lastTick, maxGap, maxLate;
+    private Guid largeOutputPlan;
+    private int largePressedNote = -1;
+    private bool scheduledOutput, outputActivated;
+    private string outputIssue;
+    private readonly Queue<string> lateSamples = new();
+    private sealed record OutputEvent(MidiEvent Event, MidiPlaybackMetaData Metadata, Guid Plan, double Target, object Owner)
     {
-        Channels = new ChannelState[16];
-        CurrentChannel = FourBitNumber.MinValue;
-        MidiEventsBuffer = new List<(MidiEvent, MidiPlaybackMetaData)>[BufferLength];
-        for (var i = 0; i < MidiEventsBuffer.Length; i++)
-        {
-            MidiEventsBuffer[i] = new List<(MidiEvent, MidiPlaybackMetaData)>();
-        }
-
-        PlaybackTicker = new MidiClock(false, new HighPrecisionTickGenerator(), TimeSpan.FromMilliseconds(1));
-        PlaybackTicker.Ticked += PlaybackTickerTicked;
-        PlaybackTicker.Restart();
+        public double Due { get; set; } = Target;
+        public ScheduledNote Note { get; set; }
     }
+    internal sealed record ScheduledEvent(MidiEvent Event, MidiPlaybackMetaData Metadata, double Seconds);
 
-    private long CurrentBufferIndex;
-    private List<(MidiEvent, MidiPlaybackMetaData)> NotesCurrentTick => MidiEventsBuffer[CurrentBufferIndex];
+    public (int PendingEvents, long Revision) PlaybackOutputState
+    { get { lock (outputGate) return (pending.Count, outputRevision); } }
+    internal PlaybackTimingDiagnostics OutputTiming
+    { get { lock (outputGate) return new(dispatched, maxLate, maxGap, faults); } }
+    internal string OutputIssue(Guid plan)
+    { lock (outputGate) return plan == largeOutputPlan ? outputIssue : null; }
+    internal string TimingSummary
+    { get { lock (outputGate) return $"plan={largeOutputPlan:N} sent={dispatched} maxLateMs={maxLate:F3} maxTickGapMs={maxGap:F3} faults={faults} expiredNotes={expiredScheduledNotes} crowdedNotes={crowdedScheduledNotes} ignoredReleases={ignoredScheduledReleases} issue={outputIssue}; " + string.Join("; ", lateSamples); } }
+    internal int LargePlaybackPending(Guid planId)
+    { lock (outputGate) return planId != Guid.Empty && planId == largeOutputPlan ? largePending : 0; }
 
+    internal void BeginLargePlaybackOutput(Guid planId)
+    {
+        if (planId == Guid.Empty) throw new ArgumentException("A large playback needs a plan", nameof(planId));
+        lock (outputGate)
+        {
+            CancelLargePlaybackOutput(largeOutputPlan);
+            pending.Clear(); largePending = 0; outputRevision++;
+            largeOutputPlan = planId; scheduledOutput = false; outputActivated = true;
+            outputIssue = null; dispatched = faults = 0; maxLate = maxGap = 0; lastTick = 0; lateSamples.Clear();
+            ClearScheduledNoteOwnership();
+            expiredScheduledNotes = crowdedScheduledNotes = ignoredScheduledReleases = 0;
+            lastnoteon = (new MidiPlaybackMetaData(-1, -1, -1), 0);
+        }
+    }
+    internal void PrepareLargePlaybackOutput(Guid plan, double start, double speed, bool compensate, IEnumerable<ScheduledEvent> events)
+    {
+        if (!double.IsFinite(start) || !double.IsFinite(speed) || speed <= 0) throw new ArgumentOutOfRangeException(nameof(start));
+        lock (outputGate)
+        {
+            BeginLargePlaybackOutput(plan); scheduledOutput = true; outputActivated = false;
+            try
+            {
+                var prepared = new List<(OutputEvent Event, double ScoreTime)>();
+                foreach (var e in events.OrderBy(e => e.Seconds))
+                {
+                    if (!double.IsFinite(e.Seconds) || e.Seconds < 0) throw new ArgumentOutOfRangeException(nameof(events));
+                    // Velocity-zero NoteOn is a release, not a fresh attack. Limit
+                    // normalization and note-instance ownership to the scheduled path.
+                    MidiEvent midiEvent = e.Event is NoteOnEvent zero && (int)zero.Velocity == 0
+                        ? new NoteOffEvent(zero.NoteNumber, (SevenBitNumber)0) { Channel = zero.Channel } : e.Event;
+                    prepared.Add((QueuePlaybackMidiEventLocked(midiEvent, e.Metadata, plan, start + e.Seconds / speed, compensate), e.Seconds));
+                }
+                PrepareScheduledNoteLinks(prepared);
+            }
+            catch { CancelLargePlaybackOutput(plan); throw; }
+        }
+    }
+    internal void ActivateLargePlaybackOutput(Guid plan)
+    {
+        lock (outputGate)
+        {
+            if (plan != largeOutputPlan || !scheduledOutput) throw new InvalidOperationException("预约输出已失效");
+            outputActivated = true; lastTick = 0;
+        }
+    }
+    internal void CancelLargePlaybackOutput(Guid planId)
+    {
+        if (planId == Guid.Empty) return;
+        lock (outputGate)
+        {
+            var keep = pending.UnorderedItems.Where(e => e.Element.Plan != planId).ToArray();
+            pending.Clear(); foreach (var e in keep) pending.Enqueue(e.Element, e.Priority);
+            if (largeOutputPlan == planId)
+            {
+                largeOutputPlan = Guid.Empty; largePending = 0; outputActivated = false; scheduledOutput = false;
+                if (largePressedNote >= 0 && MidiBard.AgentPerformance.InPerformanceMode) KeyUp(largePressedNote);
+                largePressedNote = -1;
+                ClearScheduledNoteOwnership();
+                lastnoteon = (new MidiPlaybackMetaData(-1, -1, -1), 0);
+            }
+            outputRevision++;
+        }
+    }
+    internal void CancelLegacyPlaybackOutput()
+    {
+        lock (outputGate)
+        {
+            var keep = pending.UnorderedItems.Where(e => e.Element.Plan != Guid.Empty).ToArray();
+            pending.Clear(); foreach (var e in keep) pending.Enqueue(e.Element,e.Priority);
+            if (largeOutputPlan == Guid.Empty && MidiBard.AgentPerformance.InPerformanceMode)
+            {
+                var note = MidiBard.AgentPerformance.noteNumber - 39;
+                if (note is >= 0 and <= 36) KeyUp(note);
+            }
+            lastnoteon = (new MidiPlaybackMetaData(-1,-1,-1),0); outputRevision++;
+        }
+    }
+    public BardPlayDevice() : this(() => TransportClock.Now) { }
+    internal BardPlayDevice(Func<double> clock)
+    {
+        nowClock = clock;
+        Channels = new ChannelState[16]; CurrentChannel = FourBitNumber.MinValue;
+        PlaybackTicker = new MidiClock(false, new HighPrecisionTickGenerator(), TimeSpan.FromMilliseconds(1));
+        PlaybackTicker.Ticked += PlaybackTickerTicked; PlaybackTicker.Restart();
+    }
     private void PlaybackTickerTicked(object sender, EventArgs e)
     {
         if (IsDisposed) return;
-        try
+        lock (outputGate) DrainCurrentTick();
+    }
+    private void DrainCurrentTick()
+    {
+        var now = nowClock();
+        if (largeOutputPlan != Guid.Empty && MidiBard.CurrentPlayback?.LargePlanId != largeOutputPlan)
+            CancelLargePlaybackOutput(largeOutputPlan);
+        if (largeOutputPlan != Guid.Empty && scheduledOutput && scheduledOutputOwner != null
+            && !ReferenceEquals(scheduledOutputOwner, MidiBard.CurrentPlayback))
+            CancelLargePlaybackOutput(largeOutputPlan);
+        if (scheduledOutput && !outputActivated) return;
+        if (lastTick != 0 && pending.Count > 0) maxGap = Math.Max(maxGap, (now - lastTick) * 1000);
+        lastTick = now;
+        while (pending.TryPeek(out var item, out _) && item.Due <= now)
         {
-            foreach (var (midiEvent, (trackIndex, time, eventValue)) in NotesCurrentTick.OrderBy(i => i.Item2.EventValueTransposed))
+            pending.Dequeue();
+            if (item.Plan != Guid.Empty && item.Plan == largeOutputPlan) largePending--;
+            if (!ReferenceEquals(item.Owner, MidiBard.CurrentPlayback)) continue;
+            if (item.Plan != Guid.Empty && item.Plan != largeOutputPlan) continue;
+            // A release owns one MIDI note instance, not every later note of the
+            // same pitch. Skipped/replaced/orphan releases never touch a held key.
+            if (scheduledOutput && item.Plan != Guid.Empty && item.Event is NoteOffEvent
+                && (item.Note == null || !ReferenceEquals(item.Note, activeScheduledNote)))
             {
-                try
+                ignoredScheduledReleases++; now = nowClock(); continue;
+            }
+            if (!MidiBard.AgentPerformance.InPerformanceMode)
+            {
+                if (item.Plan != Guid.Empty && scheduledOutput) FailScheduledOutput("角色已退出演奏状态，请重新下发");
+                else { pending.Clear(); outputRevision++; }
+                return;
+            }
+            var late = (now - item.Due) * 1000; maxLate = Math.Max(maxLate, late);
+            if (item.Plan != Guid.Empty && late > 10)
+            {
+                if (lateSamples.Count == 32) lateSamples.Dequeue();
+                lateSamples.Enqueue($"midi={item.Metadata.Time} type={item.Event.EventType} due={item.Due:F6} actual={now:F6} lateMs={late:F3}");
+            }
+            // Do not burst an expired phrase into the game. Stop the whole plan,
+            // releasing its held key; the framework propagates this fault to the group.
+            if (item.Plan != Guid.Empty && scheduledOutput && late > 80 + ScheduledTimeEpsilon * 1000)
+            {
+                FailScheduledOutput($"音符输出迟到 {late:F0} 毫秒，已停止本机输出，请重新下发");
+                return;
+            }
+            if (item.Plan != Guid.Empty && scheduledOutput && SkipScheduledAttack(item, now))
+            { now = nowClock(); continue; }
+            try
+            {
+                var played = PlayMidiEvent(item.Event, item.Metadata.TrackIndex, false);
+                dispatched++;
+                if (!played && scheduledOutput && item.Plan != Guid.Empty && item.Event is NoteEvent failedNote
+                    && GetNoteNumberTranslatedByTrack(failedNote.NoteNumber, item.Metadata.TrackIndex) is >= 0 and <= 36)
                 {
-                    //Actually Play event
-                    // PluginLog.Verbose($"[MidiClockTick] buffer: {CurrentBufferIndex} remain: {NotesCurrentTick.Count} {midiEvent} T{trackIndex}");
-                    PlayMidiEvent(midiEvent, trackIndex, false);
+                    FailScheduledOutput("游戏按键接口未接受音符，已停止本机输出，请重新下发");
+                    return;
                 }
-                catch (Exception exception)
+                if (played && item.Plan != Guid.Empty && item.Event is NoteEvent note)
                 {
-                    PluginLog.Error(exception, "exception in dequeue tick method");
+                    var translated = GetNoteNumberTranslatedByTrack(note.NoteNumber, item.Metadata.TrackIndex);
+                    if (item.Event is NoteOnEvent) largePressedNote = translated;
+                    else if (translated == largePressedNote) largePressedNote = -1;
+                    if (scheduledOutput) RegisterScheduledDispatch(item, nowClock());
                 }
             }
-        }
-        catch (Exception exception)
-        {
-            PluginLog.Error(exception, "error when dequeuing midi event");
-        }
-
-        NotesCurrentTick.Clear();
-
-        CurrentBufferIndex++;
-        if (CurrentBufferIndex >= BufferLength)
-        {
-            CurrentBufferIndex = 0;
+            catch (Exception ex)
+            {
+                if (scheduledOutput && item.Plan != Guid.Empty)
+                    FailScheduledOutput("音符输出接口发生异常，已停止本机输出，请重新下发");
+                PluginLog.Error(ex, "exception in deadline output");
+                if (scheduledOutput && item.Plan != Guid.Empty) return;
+            }
+            // Re-read real time, never synthesize elapsed time from callback count.
+            now = nowClock();
         }
     }
 
-    //int GetNoteDelay(int instrument, int noteNumber)
-    //{
-    //    if (noteNumber == -1)
-    //    {
-    //        return EnsembleManager.GetCompensationNew(instrument, noteNumber);
-    //    }
-
-    //    var instrumentDelayFromConfig = 0; //switch ... blahblahblah
-    //    return instrumentDelayFromConfig;
-    //}
+    // Called under outputGate. Keep the plan/fault visible to the framework so it
+    // can stop the group; never resume this queue merely because callbacks resume.
+    private void FailScheduledOutput(string issue)
+    {
+        faults++; outputIssue = issue;
+        pending.Clear(); largePending = 0; outputRevision++; outputActivated = false;
+        var held = largePressedNote; largePressedNote = -1;
+        ClearScheduledNoteOwnership();
+        try { if (held >= 0 && MidiBard.AgentPerformance.InPerformanceMode) KeyUp(held); }
+        catch (Exception ex) { PluginLog.Error(ex, "failed to release key after output fault"); }
+    }
 
     private (MidiPlaybackMetaData metadata, int delayms) lastnoteon = (new MidiPlaybackMetaData(-1, -1, -1), 0);
-    public void QueuePlaybackMidiEvent(MidiEvent midiEvent, MidiPlaybackMetaData metadata)
+    public void QueuePlaybackMidiEvent(MidiEvent midiEvent, MidiPlaybackMetaData metadata, Guid largePlanId = default)
+    {
+        var enqueuedAt = nowClock();
+        lock (outputGate)
+        {
+            // Include chord-order state in the cancellation boundary.
+            if (largePlanId != Guid.Empty && (largePlanId != largeOutputPlan || MidiBard.CurrentPlayback?.LargePlanId != largePlanId)) return;
+            QueuePlaybackMidiEventLocked(midiEvent, metadata, largePlanId, enqueuedAt);
+        }
+    }
+
+    private OutputEvent QueuePlaybackMidiEventLocked(MidiEvent midiEvent, MidiPlaybackMetaData metadata, Guid largePlanId, double eventTime, bool compensate = true)
     {
         var trackIndex = metadata.TrackIndex;
 
         int delayMs;
-        if (midiEvent is not NoteEvent noteEvent)
+        if (!compensate) delayMs = 0;
+        else if (midiEvent is not NoteEvent noteEvent)
         {
-            delayMs = EnsembleManager.GetCompensationNew(MidiBard.CurrentInstrumentWithTone, -1);
+            delayMs = EnsembleManager.GetCompensationNew(MidiBard.CurrentInstrumentWithTone, -1, largePlanId != Guid.Empty);
         }
         else
         {
-            delayMs = EnsembleManager.GetCompensationNew(MidiBard.CurrentInstrumentWithTone, GetNoteNumberTranslatedByTrack(noteEvent.NoteNumber, trackIndex));
+            delayMs = EnsembleManager.GetCompensationNew(MidiBard.CurrentInstrumentWithTone, GetNoteNumberTranslatedByTrack(noteEvent.NoteNumber, trackIndex), largePlanId != Guid.Empty);
 
             if (midiEvent is NoteOnEvent noteOn)
             {
@@ -145,10 +300,13 @@ public class BardPlayDevice : IOutputDevice
             }
         }
 
-        var delayedBufferIndex = (CurrentBufferIndex + delayMs + 1) % BufferLength;
-
-        // PluginLog.Verbose($"[enqueue] ti{metadata.Time} dt{midiEvent.DeltaTime} event {midiEvent} to: {CurrentBufferIndex}+{delayMs}={delayedBufferIndex} ({EnsembleManager.CompensationMax - delayMs})");
-        MidiEventsBuffer[delayedBufferIndex].Add((midiEvent, metadata));
+        var due = eventTime + Math.Max(0, delayMs) / 1000d;
+        if (!double.IsFinite(due)) throw new ArgumentOutOfRangeException(nameof(eventTime));
+        var output = new OutputEvent(midiEvent, metadata, largePlanId, due, MidiBard.CurrentPlayback);
+        pending.Enqueue(output, (due, metadata.EventValueTransposed, sequence++));
+        if (largePlanId != Guid.Empty) largePending++;
+        outputRevision++;
+        return output;
     }
 
     private struct ChannelState
@@ -184,7 +342,7 @@ public class BardPlayDevice : IOutputDevice
     {
     }
 
-    public void SendEventWithMetadata(MidiEvent midiEvent, object metadata)
+    public void SendEventWithMetadata(MidiEvent midiEvent, object metadata, Guid largePlanId = default)
     {
         if (IsDisposed) return;
         if (!MidiBard.AgentPerformance.InPerformanceMode) return;
@@ -198,7 +356,13 @@ public class BardPlayDevice : IOutputDevice
                 }
             case MidiPlaybackMetaData midiPlaybackMeta:
                 {
+                    if (largePlanId != Guid.Empty && MidiBard.CurrentPlayback?.LargePlanId != largePlanId) return;
                     if (MidiBard.CurrentPlayback?.TrackInfos[midiPlaybackMeta.TrackIndex].IsPlaying != true) return;
+                    if (largePlanId != Guid.Empty && MidiBard.CurrentPlayback.UseLargeInstrumentCompensation)
+                    {
+                        QueuePlaybackMidiEvent(midiEvent, midiPlaybackMeta, largePlanId);
+                        return;
+                    }
                     if (EnsembleManager.EnsembleRunning)
                     {
                         QueuePlaybackMidiEvent(midiEvent, midiPlaybackMeta);
@@ -386,10 +550,10 @@ public class BardPlayDevice : IOutputDevice
     private bool IsDisposed;
     private void ReleaseUnmanagedResources()
     {
+        IsDisposed = true;
         PlaybackTicker.Ticked -= PlaybackTickerTicked;
         PlaybackTicker.Stop();
         PlaybackTicker.Dispose();
-        IsDisposed = true;
     }
 
     public void Dispose()

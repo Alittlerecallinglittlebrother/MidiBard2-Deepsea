@@ -40,6 +40,10 @@ internal sealed class BardPlayback : Playback
 {
     internal MidiFileConfig MidiFileConfig { get; set; }
     internal bool IsSoloPlayback { get; init; }
+    internal Guid LargePlanId { get; init; }
+    internal bool UseLargeInstrumentCompensation { get; set; }
+    internal bool UsesScheduledOutput { get; private set; }
+    private readonly BardPlayDevice.ScheduledEvent[] scheduledEvents;
     internal MidiFile MidiFile { get; init; }
     internal string FilePath { get; init; }
     internal TrackChunk[] TrackChunks { get; init; }
@@ -61,6 +65,7 @@ internal sealed class BardPlayback : Playback
             TrackInfos = trackInfos,
             MidiFileConfig = midiFileConfig,
             IsSoloPlayback = AutomaticEnsembleAssignment.IsSoloLoad,
+            LargePlanId = DistributedEnsembleAssignment.IsLarge ? DistributedEnsembleAssignment.Current?.Id ?? Guid.Empty : Guid.Empty,
             DisplayName = Path.GetFileNameWithoutExtension(filePath)
         };
     }
@@ -220,21 +225,39 @@ internal sealed class BardPlayback : Playback
     private BardPlayback(IEnumerable<TimedEventWithMetadata> timedObjects, TempoMap tempoMap)
     : base(timedObjects, tempoMap, new PlaybackSettings { ClockSettings = new MidiClockSettings { CreateTickGeneratorCallback = () => new HighPrecisionTickGenerator() } })
     {
+        scheduledEvents = timedObjects.Where(e => e.Event is NoteEvent or ProgramChangeEvent)
+            .Select(e => new BardPlayDevice.ScheduledEvent(e.Event, (BardPlayDevice.MidiPlaybackMetaData)e.Metadata,
+                TimeConverter.ConvertTo<MetricTimeSpan>(e.Time, tempoMap).TotalMicroseconds / 1000000d)).ToArray();
+        Stopped += (_, _) =>
+        {
+            if (LargePlanId != Guid.Empty) MidiBard.BardPlayDevice.CancelLargePlaybackOutput(LargePlanId);
+            else if (ReferenceEquals(this, MidiBard.CurrentPlayback)) MidiBard.BardPlayDevice.CancelLegacyPlaybackOutput();
+        };
+    }
+
+    internal void PrepareScheduledOutput(double at)
+    {
+        if (LargePlanId == Guid.Empty) throw new InvalidOperationException("只有多人合奏可以预约输出");
+        UsesScheduledOutput = true;
+        MidiBard.BardPlayDevice.PrepareLargePlaybackOutput(LargePlanId, at, Speed, UseLargeInstrumentCompensation,
+            scheduledEvents.Where(e => TrackInfos[e.Metadata.TrackIndex].IsPlaying));
     }
 
     protected override bool TryPlayEvent(MidiEvent midiEvent, object metadata)
     {
+        // Large output follows the prepared score; this engine observes progress/EOF.
+        if (UsesScheduledOutput) return true;
         // Place your logic here
         // Return true if event played (sent to plug-in); false otherwise
-        MidiBard.BardPlayDevice.SendEventWithMetadata(midiEvent, metadata);
+        MidiBard.BardPlayDevice.SendEventWithMetadata(midiEvent, metadata, LargePlanId);
         return true;
     }
 
     private static void PreparePlaybackData(MidiFile file, out TempoMap tempoMap, out TrackChunk[] trackChunks, out TrackInfo[] trackInfos, out TimedEventWithMetadata[] timedEventWithMetadata)
     {
-        if (MidiBard.config.AntiStackType != AntiStackType.Off)
+        if (!DistributedEnsembleAssignment.IsLarge && MidiBard.config.AntiStackType != AntiStackType.Off)
             file = MidiPreprocessor.RemoveStackedNotes(file, MidiBard.config.AntiStackType);
-        if (MidiBard.config.AlignMidi)
+        if (!DistributedEnsembleAssignment.IsLarge && MidiBard.config.AlignMidi)
             file = MidiPreprocessor.RealignMidiFile(file, MidiBard.config.AlignMidiStartOffset);
 
         tempoMap = TryGetTempoMap(file);

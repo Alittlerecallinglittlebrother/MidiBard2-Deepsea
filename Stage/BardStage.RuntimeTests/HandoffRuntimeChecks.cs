@@ -9,6 +9,153 @@ using Melanchall.DryWetMidi.Multimedia;
 
 internal static class HandoffRuntimeChecks
 {
+    public static void RunAuthorityRefresh(string scratch, string midiPath)
+    {
+        var failures = new List<string>();
+        void Scenario(string name, Action action)
+        {
+            try { action(); }
+            catch (Exception ex) { failures.Add(name + ": " + ex.Message); Console.WriteLine("FAIL: " + name + ": " + ex.Message); }
+        }
+        Scenario("lease arrives before the new leader's game party state", () =>
+        {
+            using var f = new Fixture(scratch, midiPath);
+            f.Connect();
+            var room = f.Host.Controller.Room!.Id;
+            f.Host.Backend.Party = f.Host.Backend.Party with { LeaderCid = 2 };
+            f.B.Backend.Party = f.B.Backend.Party with { LeaderCid = 2 };
+            f.PumpFor(200);
+            Check(!f.A.Controller.CanEditQueue, "stale local party state cannot use an early leadership grant");
+            f.A.Backend.Party = f.A.Backend.Party with { LeaderCid = 2 };
+            f.Until(() => f.A.Controller.CanEditQueue, 3);
+            Check(f.Host.Controller.Room.Id == room && f.A.Controller.Room!.Connected,
+                "delayed party refresh recovers new leader authority without rejoining the room");
+        });
+        Scenario("a transient unavailable local party snapshot", () =>
+        {
+            using var f = new Fixture(scratch, midiPath);
+            f.Connect(); f.Leader(2);
+            f.Until(() => f.A.Controller.CanEditQueue);
+            var party = f.A.Backend.Party;
+            f.A.Backend.Party = new(0, 0, 0);
+            f.PumpFor(80);
+            Check(!f.A.Controller.CanEditQueue, "missing party identity immediately suspends authority");
+            f.A.Backend.Party = party;
+            f.Until(() => f.A.Controller.CanEditQueue, 3);
+            Check(f.Host.Coordinator.ExecutorCid == 2, "leader authority recovers after a temporary party read failure");
+        });
+        Scenario("refresh is idempotent while a song is loading", () =>
+        {
+            using var f = new Fixture(scratch, midiPath);
+            f.Connect(); f.Leader(2);
+            f.Until(() => f.A.Controller.CanEditQueue);
+            f.A.Backend.LoadGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            f.AddTwoAndStart(waitForStart: false);
+            f.Until(() => f.A.Backend.Loads == 1);
+            var revokes = f.A.Backend.Revokes;
+            var epoch = f.Host.Coordinator.Epoch;
+            f.PumpFor(1250);
+            Check(!f.A.Backend.LastCancellation.IsCancellationRequested && f.A.Backend.Loads == 1
+                && f.A.Backend.Revokes == revokes && f.Host.Coordinator.Epoch == epoch,
+                "identical lease refresh preserves an in-flight load and playback ownership");
+            f.A.Backend.LoadGate.SetCanceled();
+            f.PumpFor(50);
+        });
+        Scenario("refresh preserves command de-duplication", () =>
+        {
+            using var f = new Fixture(scratch, midiPath);
+            f.Connect(); f.Leader(2);
+            f.Until(() => f.A.Controller.CanEditQueue);
+            f.AddTwoAndStart(); f.Remote(f.Presenter, RoomAction.Pause);
+            var id = (Guid)typeof(RoomPlaybackCoordinator).GetField("lastClientCommand",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(f.A.Coordinator)!;
+            var command = new RoomExecutionCommand { Id = id, Epoch = f.Host.Coordinator.Epoch,
+                Action = RoomExecutionAction.Pause, Hash = f.A.Backend.Hash, Mode = QueuePlaybackMode.Ensemble };
+            var revokes = f.A.Backend.Revokes;
+            f.PumpFor(1250); f.Inject(command); f.PumpFor(80);
+            Check(f.A.Backend.Pauses == 1 && f.A.Backend.Revokes == revokes && f.Player.IsPaused,
+                "a repeated command after lease refresh does not pause or execute twice");
+        });
+        Scenario("stale grants cannot re-promote a former leader", () =>
+        {
+            using var f = new Fixture(scratch, midiPath);
+            f.Connect(); f.Leader(2);
+            f.Until(() => f.A.Controller.CanEditQueue);
+            var oldEpoch = f.Host.Coordinator.Epoch;
+            f.Leader(3);
+            f.Until(() => f.B.Controller.CanEditQueue && !f.A.Controller.CanEditQueue);
+            var oldPeer = f.Host.Controller.Room!.Server!.Participants.Single(p => f.Host.Coordinator.VerifiedMember(p.Peer) == 2).Peer;
+            oldPeer.Send(new RoomPacket { Type = "executionLease", RoomId = f.Host.Controller.Room.Id,
+                Lease = new(oldEpoch, Fixture.PartyId, 2, true) });
+            f.A.Backend.Party = f.A.Backend.Party with { LeaderCid = 2 };
+            f.PumpFor(1250);
+            Check(!f.A.Coordinator.ClientHasAuthority && !f.A.Controller.CanEditQueue && f.B.Controller.CanEditQueue,
+                "old-epoch grant and stale game state cannot restore a demoted leader");
+        });
+        Scenario("same-room rejoin uses a fresh client session", () =>
+        {
+            using var f = new Fixture(scratch, midiPath);
+            f.Connect(); f.Leader(2);
+            f.Until(() => f.A.Controller.CanEditQueue);
+            var room = f.Host.Controller.Room!.Id;
+            f.A.Backend.Prove = false;
+            f.A.Controller.Room!.Leave(); f.JoinViewer(f.A);
+            f.PumpFor(200);
+            Check(!f.A.Coordinator.ClientHasAuthority && !f.A.Controller.CanEditQueue,
+                "leaving and immediately rejoining cannot retain the previous client lease");
+            var proof = f.A.Backend.LastProof!.Value;
+            f.A.Backend.Prove = true;
+            f.Host.Coordinator.ReceiveProof(proof.Room, proof.Challenge, 2, Fixture.PartyId);
+            f.Until(() => f.A.Controller.CanEditQueue);
+            Check(f.Host.Controller.Room.Id == room && f.Presenter.Room!.Connected,
+                "reverified new client recovers without rebuilding the original room");
+        });
+        Scenario("repeated staggered game leader updates", () =>
+        {
+            using var f = new Fixture(scratch, midiPath);
+            f.Connect();
+            var room = f.Host.Controller.Room!.Id;
+            for (var i = 0; i < 12; i++)
+            {
+                var leader = (ulong)(i % 3 + 1);
+                f.Host.Backend.Party = f.Host.Backend.Party with { LeaderCid = leader };
+                f.PumpFor(15);
+                f.B.Backend.Party = f.B.Backend.Party with { LeaderCid = leader };
+                f.PumpFor(15);
+                f.A.Backend.Party = f.A.Backend.Party with { LeaderCid = leader };
+                f.Until(() => f.Nodes.All(n => n.Controller.CanEditQueue == (n.Backend.Party.SelfCid == leader)), 3);
+                Check(f.Host.Controller.Room.Id == room && f.Presenter.Room!.Connected
+                    && f.A.Controller.Room!.Connected && f.B.Controller.Room!.Connected,
+                    $"staggered handoff round {i + 1} converges to exactly one game leader without reconnecting");
+            }
+            Check(f.Nodes.All(n => n.Backend.Loads == 0 && n.Backend.Starts == 0 && n.Backend.Stops == 0),
+                "authority refresh alone never loads, starts, or stops a song");
+        });
+        Scenario("ordinary authority is isolated from large-ensemble mode", () =>
+        {
+            using var f = new Fixture(scratch, midiPath);
+            f.Connect(); f.Leader(2);
+            f.Until(() => f.A.Controller.CanEditQueue);
+            var room = f.Host.Controller.Room!.Id;
+            f.SetLargeMode(true); f.PumpFor(100);
+            Check(!f.A.Coordinator.ClientHasAuthority && !f.A.Controller.Room!.HasRemoteControl
+                && !f.Host.Coordinator.IsCoordinated && f.Host.Controller.Room.Server!.Participants.All(p => !f.Host.Controller.Room.Server.IsExecutor(p.Peer)),
+                "enabling large mode revokes ordinary ensemble authority on client and server");
+            Check(f.Host.Controller.Room.LargeEnsemble!.IsCaptain && !f.A.Controller.Room!.LargeEnsemble!.IsCaptain,
+                "large-ensemble conductor remains the room host, independently of game party leadership");
+            f.Leader(3); f.PumpFor(80);
+            f.SetLargeMode(false);
+            f.Until(() => f.B.Controller.CanEditQueue && !f.A.Controller.CanEditQueue, 3);
+            Check(f.Host.Controller.Room.Id == room && f.Presenter.Room!.Connected,
+                "disabling large mode revalidates the current game leader in the same room");
+            f.SetLargeMode(true); f.PumpFor(80); f.SetLargeMode(false);
+            f.Until(() => f.B.Controller.CanEditQueue, 3);
+            Check(f.B.Controller.CanEditQueue && !f.A.Controller.CanEditQueue,
+                "a mode round trip with no leader change also refreshes authority");
+        });
+        if (failures.Count != 0) throw new InvalidOperationException(string.Join(Environment.NewLine, failures));
+    }
+
     public static void RunUi(string scratch, string midiPath, string output)
     {
         Directory.CreateDirectory(output);
@@ -231,6 +378,22 @@ internal static class HandoffRuntimeChecks
 
         using (var f = new Fixture(scratch, midiPath) { RealEngine = true })
         {
+            foreach (var node in f.Nodes) node.Backend.HoldTail = true;
+            f.Connect(); f.AddTwoAndStart();
+            f.Until(() => f.Nodes.All(n => n.Backend.TailReached));
+            f.Leader(2);
+            f.Until(() => f.A.Controller.CanEditQueue && f.Host.Coordinator.ExecutionIssue == null);
+            f.PumpFor(60);
+            Check(f.Show.Entries[0].Status == EntryStatus.InProgress && f.Nodes.All(n => n.Backend.Finishes == 0),
+                "TLS leader handoff during output tail cannot stop ensemble or advance early");
+            foreach (var node in f.Nodes) node.Backend.HoldTail = false;
+            f.Until(() => f.Show.Entries.All(e => e.Status == EntryStatus.Completed), 10);
+            f.Until(() => f.A.Backend.Finishes == 2);
+            Check(f.A.Backend.Loads == 1 && f.A.Backend.Starts == 1,
+                "new leader publishes protected completion over TLS and advances exactly once");
+        }
+        using (var f = new Fixture(scratch, midiPath) { RealEngine = true })
+        {
             f.Connect(); f.AddTwoAndStart(); var first = f.Player.ActiveEntryId;
             f.Leader(2); f.Until(() => f.A.Controller.CanEditQueue && f.Host.Coordinator.ExecutionIssue == null);
             f.Remote(f.Presenter, RoomAction.Pause); f.Until(() => f.Player.IsPaused);
@@ -253,6 +416,7 @@ internal static class HandoffRuntimeChecks
         public readonly AutoQueuePlayer Player;
         public bool RealEngine;
         public bool TransferSongs;
+        private readonly List<IDisposable> modeResources = [];
         public ShowSetlist Show => Host.Controller.QueueShow!;
         public Fixture(string scratch, string midiPath)
         {
@@ -289,6 +453,21 @@ internal static class HandoffRuntimeChecks
         }
         public void Leader(ulong cid)
         { foreach (var node in Nodes) node.Backend.Party = node.Backend.Party with { LeaderCid = cid }; }
+        public void SetLargeMode(bool enabled)
+        {
+            foreach (var node in Nodes)
+            {
+                if (node.Controller.Room!.LargeEnsemble == null)
+                {
+                    var driver = new LocalEnsembleRuntimeChecks.Driver(() => new LargeContext(node.Backend.Party.SelfCid,
+                        Nodes.Select(n => new LargeMember(n.Backend.Party.SelfCid, "member", 1, 0)).ToArray(), 1, 1));
+                    var large = new RoomLargeEnsemble(node.Controller.Room, driver);
+                    node.Controller.Room.LargeEnsemble = large;
+                    modeResources.Add(large); modeResources.Add(driver);
+                }
+                node.Controller.Room.LargeEnsemble.SetEnabled(enabled);
+            }
+        }
         public IEnumerable<Node> Nodes => new[] { Host, A, B };
         public void AddTwoAndStart(bool waitForStart = true)
         {
@@ -321,6 +500,7 @@ internal static class HandoffRuntimeChecks
         public void FinishAll() { foreach (var node in Nodes) node.Backend.Emit(PlaybackSignalKind.Finished); }
         public void Pump()
         {
+            foreach (var node in Nodes) node.Backend.PollOutput();
             Host.Coordinator.Tick(); Host.Controller.Poll(); Host.Controller.Room!.Tick(); Player.Tick();
             foreach (var node in new[] { A, B }) { node.Coordinator.Tick(); node.Controller.Poll(); node.Controller.Room!.Tick(); }
             foreach (var node in Nodes) node.Sharing.Tick();
@@ -342,6 +522,7 @@ internal static class HandoffRuntimeChecks
         public void Dispose()
         {
             var tasks = Nodes.Select(n => n.Controller.Room?.TransportCompletion).Append(Presenter.Room?.TransportCompletion).OfType<Task>().ToArray();
+            foreach (var resource in modeResources) resource.Dispose();
             Player.Dispose(); foreach (var node in Nodes) { node.Sharing.Dispose(); node.Backend.Dispose(); node.Coordinator.Dispose(); node.Controller.Dispose(); }
             Presenter.Dispose(); Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
         }
@@ -369,7 +550,7 @@ internal static class HandoffRuntimeChecks
         public RoomPartyState Party { get; set; } = new(Fixture.PartyId, cid, 1);
         public RoomPlaybackCoordinator Coordinator = null!;
         public RoomSongSharing Sharing = null!;
-        public int Loads, Starts, Pauses, Resumes, Stops, Finishes, Adopts;
+        public int Loads, Starts, Pauses, Resumes, Stops, Finishes, Adopts, Revokes;
         public bool Prove = true, FailStop, MissingSong, FailAdopt;
         public TaskCompletionSource? LoadGate;
         public CancellationToken LastCancellation;
@@ -379,6 +560,8 @@ internal static class HandoffRuntimeChecks
         private long sequence;
         private Playback? engine;
         private PlaybackObserver? observer;
+        public bool HoldTail, TailReached;
+        public void PollOutput() => observer?.Poll();
         private bool playing;
         public bool IsPlaying => fixture.RealEngine ? engine?.IsRunning == true : playing;
         public string? BlockReason(QueuePlaybackMode mode) => Party.SelfCid == Party.LeaderCid ? null : "not leader";
@@ -393,7 +576,7 @@ internal static class HandoffRuntimeChecks
             if (Prove) fixture.Host.Coordinator.ReceiveProof(roomId, challenge, Party.SelfCid, Party.PartyId);
         }
         public bool Adopt(string hash) { Adopts++; return !FailAdopt && Hash == hash; }
-        public void Revoke() { }
+        public void Revoke() { Revokes++; }
         public Task LoadAsync(string filePath, QueuePlaybackMode mode, CancellationToken cancellationToken)
         {
             Loads++; LastCancellation = cancellationToken;
@@ -403,12 +586,14 @@ internal static class HandoffRuntimeChecks
                 node.Backend.Path = filePath; node.Backend.Hash = Fingerprint(filePath); node.Backend.playback = Guid.NewGuid();
                 if (fixture.RealEngine)
                 {
-                    node.Backend.observer ??= new(node.Coordinator.Receive);
+                    node.Backend.observer ??= new(node.Coordinator.Receive, _ => () => !node.Backend.HoldTail);
                     node.Backend.engine?.Dispose();
                     node.Backend.engine = new MidiFile(new TrackChunk(new NoteOnEvent((SevenBitNumber)60, (SevenBitNumber)80),
                         new NoteOffEvent((SevenBitNumber)60, (SevenBitNumber)0) { DeltaTime = 384 }))
                         { TimeDivision = new TicksPerQuarterNoteTimeDivision(96) }.GetPlayback();
                     node.Backend.observer.Attach(node.Backend.engine, filePath);
+                    node.Backend.TailReached = false;
+                    node.Backend.engine.Finished += (_, _) => node.Backend.TailReached = true;
                 }
                 else node.Backend.Emit(PlaybackSignalKind.Loaded);
             }

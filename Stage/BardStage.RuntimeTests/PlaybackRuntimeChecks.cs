@@ -14,8 +14,53 @@ internal static class PlaybackRuntimeChecks
     public static void Run(string scratch, string midiPath)
     {
         Engine(scratch, midiPath);
+        DeferredCompletion(midiPath);
         Controller(scratch, midiPath);
         Ipc();
+    }
+
+    private static void DeferredCompletion(string path)
+    {
+        var signals = new ConcurrentQueue<PlaybackSignal>();
+        var allow = false;
+        var created = 0;
+        var mainThread = Environment.CurrentManagedThreadId;
+        using var observer = new PlaybackObserver(signals.Enqueue, _ =>
+        {
+            Check(Environment.CurrentManagedThreadId == mainThread, "finish barrier is created on the polling thread, not MIDI callback");
+            created++;
+            return () => allow;
+        });
+        using var first = NewPlayback();
+        var ended = false;
+        first.Finished += (_, _) => Volatile.Write(ref ended, true);
+        observer.Attach(first, path); first.Start();
+        Await(() => Volatile.Read(ref ended));
+        Thread.Sleep(20); observer.Poll();
+        Check(created == 1 && signals.All(s => s.Kind != PlaybackSignalKind.Finished), "logical EOF waits for output barrier before publishing Finished");
+        var oldId = signals.First().PlaybackId;
+        first.MoveToTime(new MidiTimeSpan(0)); first.Start();
+        Check(signals.TakeLast(2).Select(s => s.Kind).SequenceEqual(new[] { PlaybackSignalKind.Stopped, PlaybackSignalKind.Started })
+            && signals.Last().PlaybackId != oldId, "replay during tail cancels the old attempt and gets a fresh playback identity");
+        using var replacement = NewPlayback();
+        observer.Attach(replacement, path); allow = true; observer.Poll();
+        Check(signals.All(s => s.Kind != PlaybackSignalKind.Finished), "replacement cannot publish a stale tail completion");
+        ended = false; replacement.Finished += (_, _) => Volatile.Write(ref ended, true);
+        replacement.Start(); Await(() => Volatile.Read(ref ended)); Thread.Sleep(20);
+        observer.Poll(); observer.Poll();
+        Check(signals.Count(s => s.Kind == PlaybackSignalKind.Finished) == 1, "drained observer emits exactly one natural completion");
+        allow = false; ended = false;
+        replacement.MoveToTime(new MidiTimeSpan(0)); replacement.Start();
+        Await(() => Volatile.Read(ref ended)); Thread.Sleep(20); observer.Poll();
+        observer.StopPendingFinish(); allow = true; observer.Poll();
+        Check(signals.Last().Kind == PlaybackSignalKind.Stopped && signals.Count(s => s.Kind == PlaybackSignalKind.Finished) == 1,
+            "native ensemble cancellation during tail reports interruption instead of delayed completion");
+        var cancelledId = signals.Last().PlaybackId;
+        replacement.MoveToTime(new MidiTimeSpan(0)); replacement.Start();
+        Check(signals.Last().Kind == PlaybackSignalKind.Started && signals.Last().PlaybackId != cancelledId,
+            "native replay after tail cancellation stays observed with a fresh playback identity");
+        observer.Dispose(); observer.Poll();
+        Check(signals.Count(s => s.Kind == PlaybackSignalKind.Finished) == 1, "disposing a completion observer never schedules late work");
     }
 
     private static Playback NewPlayback() => new MidiFile(new TrackChunk(

@@ -1,5 +1,5 @@
-param(
-    [string]$Destination = (Join-Path $env:APPDATA 'XIVLauncherCN/devPlugins/MidiBard2-Deepsea-3.2.5.24-local'),
+﻿param(
+    [string]$Destination = (Join-Path $env:APPDATA 'XIVLauncherCN/devPlugins/MidiBard2-Deepsea-3.2.5.32-local'),
     [string]$DalamudLibPath = (Join-Path $env:APPDATA 'XIVLauncherCN/addon/Hooks/dev')
 )
 $ErrorActionPreference = 'Stop'
@@ -37,7 +37,7 @@ Get-ChildItem -LiteralPath $binaryPath -Recurse -File | ForEach-Object {
         $copied += [pscustomobject]@{ Path = $relative; Sha256 = $targetHash; Bytes = $_.Length }
     }
 }
-foreach ($name in @('LICENSE', 'STAGE-README.md', 'STAGE-ROOM.md', 'STAGE-IPC.md', 'LOCAL-VERIFICATION.md', 'LOCAL-MOVEMENT.md', 'LOCAL-SONG-SYNC.md', 'LOCAL-MANUAL-ASSIGNMENT.md')) {
+foreach ($name in @('LICENSE', 'STAGE-README.md', 'STAGE-ROOM.md', 'STAGE-IPC.md', 'LOCAL-VERIFICATION.md', 'LOCAL-MOVEMENT.md', 'LOCAL-SONG-SYNC.md', 'LOCAL-MANUAL-ASSIGNMENT.md', 'LOCAL-LARGE-ENSEMBLE.md', 'LOCAL-TAIL-FIX.md', 'LOCAL-LARGE-COMPENSATION.md', 'LOCAL-SAME-COMPUTER.md', 'LOCAL-TIMING-FIX.md', 'LOCAL-AUTHORITY-FIX.md', 'LOCAL-NOTE-RECOVERY.md', 'LOCAL-FIRST-USE.md')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $destinationPath
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Stage/THIRD-PARTY-NOTICES.txt') -Destination (Join-Path $destinationPath 'STAGE-THIRD-PARTY-NOTICES.txt')

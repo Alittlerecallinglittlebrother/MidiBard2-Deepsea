@@ -31,6 +31,7 @@ internal static class MidiPlayerControl
 {
     internal static void Play()
     {
+        if (MidiBard.CurrentPlayback is { LargePlanId: var largeId } && largeId != Guid.Empty) return;
         if (MidiBard.CurrentPlayback == null)
         {
             if (!PlaylistManager.FilePathList.Any())
@@ -68,6 +69,7 @@ internal static class MidiPlayerControl
 
     public static void DoPlay(bool isEnsemble = false)
     {
+        if (MidiBard.CurrentPlayback is { LargePlanId: var largeId } && largeId != Guid.Empty) return;
         if (MidiBard.CurrentPlayback == null) return;
 
         if (MidiBard.config.autoPostSongName)
@@ -87,8 +89,20 @@ internal static class MidiPlayerControl
         Lrc.Play();
     }
 
+    // Called on the framework after the prepared engine has started on its
+    // monotonic timer. UI/chat/lyrics stay on the framework thread.
+    internal static void NotifyScheduledStart()
+    {
+        playDeltaTime = 0;
+        _stat = e_stat.Playing;
+        if (MidiBard.config.autoPostSongName) PlaylistManager.SendSongToChat(PlaylistManager.CurrentSongIndex);
+        Lrc.Play();
+    }
+
     internal static void Pause()
     {
+        if (MidiBard.CurrentPlayback is { LargePlanId: var largeId } && largeId != Guid.Empty)
+        { MidiBard.Stage?.StopPlayback(); return; }
         MidiBard.CurrentPlayback?.Stop();
         _stat = e_stat.Paused;
     }
@@ -176,8 +190,10 @@ internal static class MidiPlayerControl
 
     internal static void SetTime(ITimeSpan time)
     {
+        if (MidiBard.CurrentPlayback?.LargePlanId != Guid.Empty && MidiBard.CurrentPlayback != null) return;
         var bardPlayback = MidiBard.CurrentPlayback;
         if (bardPlayback is null) return;
+        MidiBard.BardPlayDevice.CancelLegacyPlaybackOutput();
 
         try
         {
@@ -199,8 +215,10 @@ internal static class MidiPlayerControl
 
     internal static void MoveTime(double timeInSeconds)
     {
+        if (MidiBard.CurrentPlayback?.LargePlanId != Guid.Empty && MidiBard.CurrentPlayback != null) return;
         try
         {
+            MidiBard.BardPlayDevice.CancelLegacyPlaybackOutput();
             var metricTimeSpan = MidiBard.CurrentPlayback.GetCurrentTime<MetricTimeSpan>();
             var dura = MidiBard.CurrentPlayback.GetDuration<MetricTimeSpan>();
             var totalMicroseconds = metricTimeSpan.TotalMicroseconds + (long)(timeInSeconds * 1_000_000);
@@ -227,6 +245,7 @@ internal static class MidiPlayerControl
 
     internal static bool ChangeDeltaTime(int delta)
     {
+        if (MidiBard.CurrentPlayback?.LargePlanId != Guid.Empty && MidiBard.CurrentPlayback != null) return false;
         if (MidiBard.CurrentPlayback == null || !MidiBard.CurrentPlayback.IsRunning)
         {
             playDeltaTime = 0;
@@ -242,6 +261,7 @@ internal static class MidiPlayerControl
         }
         msTime += delta * 1000;
         MetricTimeSpan newTime = new MetricTimeSpan(msTime);
+        MidiBard.BardPlayDevice.CancelLegacyPlaybackOutput();
         //PluginLog.Debug("newTime:" + newTime.TotalMicroseconds);
         MidiBard.CurrentPlayback.MoveToTime(newTime);
         playDeltaTime += delta;

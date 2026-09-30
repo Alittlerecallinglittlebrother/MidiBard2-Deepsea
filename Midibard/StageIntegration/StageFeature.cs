@@ -11,6 +11,7 @@ using Dalamud.Plugin.Services;
 using Melanchall.DryWetMidi.Multimedia;
 using Dalamud.Utility;
 using MidiBard.Control.MidiControl;
+using MidiBard.Managers;
 using MidiBard.Managers.Ipc;
 
 namespace MidiBard.StageIntegration;
@@ -28,6 +29,8 @@ internal sealed class StageFeature : IDisposable
     private readonly RoomSongSharing songTransfer;
     private readonly RoomAssignmentSharing assignmentTransfer;
     private readonly RoomMovementCoordinator movement;
+    private readonly RoomLargeEnsemble largeEnsemble;
+    private readonly MidiBardLargeEnsembleBackend largeBackend;
     private readonly AutoQueuePlayer queue;
     private int requestIssueCount;
     private DateTimeOffset nextLibraryPoll;
@@ -38,7 +41,8 @@ internal sealed class StageFeature : IDisposable
         controller = new StageController(Path.Combine(api.PluginInterface.GetPluginConfigDirectory(), "Stage")) { SyncAvailable = true };
         controller.EnsureAutomaticQueue();
         queuePort = new MidiBardQueuePort();
-        controller.LocalEnsembleControlIssue = () => !api.ClientState.IsLoggedIn ? "等待登录游戏"
+        controller.LocalEnsembleControlIssue = () => MidiBardLargeEnsembleBackend.Active ? "多人合奏模式请在“多人合奏”页面操作"
+            : !api.ClientState.IsLoggedIn ? "等待登录游戏"
             : api.PartyList.Length < 2 ? "合奏主控需要加入小队"
             : !api.PartyList.IsPartyLeader() ? $"当前队长：{api.PartyList.GetPartyLeader()?.Name}，本机已切为队员"
             : MidiBard.SlaveMode ? "当前是从控，请在演奏主控端操作" : null;
@@ -46,14 +50,43 @@ internal sealed class StageFeature : IDisposable
         {
             CanHost = () => !api.ClientState.IsLoggedIn ? "等待登录游戏"
                 : MidiBard.SlaveMode ? "请在演奏主控端创建房间"
-                : api.PartyList.Length >= 2 && !api.PartyList.IsPartyLeader() ? "请由小队队长创建演出房间" : null,
+                : !MidiBardLargeEnsembleBackend.Active && api.PartyList.Length >= 2 && !api.PartyList.IsPartyLeader() ? "请由小队队长创建演出房间" : null,
         };
         roomPlayback = new RoomPlaybackCoordinator(controller, controller.Room, queuePort);
+        largeBackend = new MidiBardLargeEnsembleBackend();
+        largeEnsemble = new RoomLargeEnsemble(controller.Room, largeBackend);
+        controller.Room.LargeEnsemble = largeEnsemble;
+        controller.OpenEnsemblePanel = () => MidiBard.Ui.OpenEnsembleWindow();
+        controller.EnsembleSetup = () => new(api.PartyList.Length,api.PartyList.IsPartyLeader(),
+            MidiBard.config.SyncClients,MidiBard.config.playOnMultipleDevices,MidiBard.config.EnableCrossComputerSongSync,
+            MidiBard.config.MonitorOnEnsemble,MidiBard.config.AutoAssignEnsembleTracks,
+            api.PartyList.IsPartyLeader() ? PartyChatCommand.EnsembleLoadIssue
+                : PartyChatCommand.IsLoading ? "正在接收并准备队长的歌曲"
+                : MidiBard.CurrentPlayback?.MidiFileConfig is { AutomaticallyAssigned: true } or { LeaderDistributed: true }
+                    ? "本曲已载入队长的分配，请确认乐器准备情况并等待开演"
+                    : "等待队长选曲与下发");
+        controller.SetEnsembleSetup = (option,value) =>
+        {
+            if(largeEnsemble.Enabled || MidiBard.IsPlaying || PartyChatCommand.IsLoading)
+                throw new InvalidOperationException("请先停止演奏和载入，并关闭多人合奏，再修改小队设置");
+            switch(option)
+            {
+                case EnsembleSetupOption.LocalControl: MidiBard.config.SyncClients=value; break;
+                case EnsembleSetupOption.RemoteControl: MidiBard.config.playOnMultipleDevices=value; break;
+                case EnsembleSetupOption.ReceiveSongs: MidiBard.config.EnableCrossComputerSongSync=value; break;
+                case EnsembleSetupOption.FollowReady: MidiBard.config.MonitorOnEnsemble=value; break;
+            }
+            MidiBard.SaveConfig();
+        };
+        MidiBardLargeEnsembleBackend.ModeEnabled = () => largeEnsemble.Enabled;
+        MidiBardLargeEnsembleBackend.Proof += largeEnsemble.ReceiveProof;
         controller.Room.SongSyncEnabled = () => MidiBard.config.EnableCrossComputerSongSync;
         controller.Room.SetSongSyncEnabled = value => { MidiBard.config.EnableCrossComputerSongSync = value; MidiBard.SaveConfig(); };
         songTransfer = new RoomSongSharing(controller.Room, controller.DataDirectory,
-            () => MidiBard.config.EnableCrossComputerSongSync, () => queuePort.Party,
-            peer => roomPlayback.VerifiedMember(peer) is var cid && cid != 0 && api.PartyList.Any(p => p.ContentId == cid));
+            () => largeEnsemble.Enabled || MidiBard.config.EnableCrossComputerSongSync,
+            () => largeEnsemble.Enabled ? new RoomPartyState(0, api.Player.ContentId, 0) : queuePort.Party,
+            peer => largeEnsemble.Enabled ? largeEnsemble.VerifiedMember(peer) != 0
+                : roomPlayback.VerifiedMember(peer) is var cid && cid != 0 && api.PartyList.Any(p => p.ContentId == cid));
         controller.Room.Songs = songTransfer;
         assignmentTransfer = new RoomAssignmentSharing(controller.Room, () => MidiBard.config.EnableCrossComputerSongSync,
             () => queuePort.Party, () => api.PartyList.Select(p => p.ContentId).ToArray(), roomPlayback.VerifiedMember);
@@ -78,7 +111,8 @@ internal sealed class StageFeature : IDisposable
         windows.AddWindow(window);
         requests = new ChatRequestReceiver(api.ChatGui, api.Framework, () => controller.Room.ReceptionSettings, controller.Room.ReceiveChat);
         ipc = new StagePlaybackIpc(api.PluginInterface, ex => api.PluginLog.Warning(ex, "Stage playback status subscriber failed."));
-        playback = new PlaybackObserver(signal => { roomPlayback.Receive(signal); ipc.Receive(signal); });
+        playback = new PlaybackObserver(signal => { roomPlayback.Receive(signal); ipc.Receive(signal); }, queuePort.CreateFinishBarrier);
+        EnsembleManager.EnsembleStopped += playback.StopPendingFinish;
         api.Framework.Update += Update;
         api.PluginInterface.UiBuilder.Draw += Draw;
     }
@@ -87,8 +121,12 @@ internal sealed class StageFeature : IDisposable
     public bool IsOpen => window.IsOpen;
     public bool IsPreparingOrPerforming => queue.IsLoading || queue.ActiveEntryId.HasValue;
     public void Attach(Playback value, string? path) => playback.Attach(value, path);
-    public void StopPlayback() => playback.Stop();
-    public bool OwnsPlayback(object value) => queuePort.OwnsPlayback(value);
+    public void StopPlayback()
+    {
+        if (largeEnsemble.Enabled && largeEnsemble.Busy) largeEnsemble.StopAll();
+        playback.Stop();
+    }
+    public bool OwnsPlayback(object value) => queuePort.OwnsPlayback(value) || largeBackend.Owns(value);
 
     private void ImportPlaylist()
     {
@@ -141,6 +179,8 @@ internal sealed class StageFeature : IDisposable
     private void Update(IFramework framework)
     {
         PartyChatCommand.Tick();
+        playback.Poll();
+        largeEnsemble.Tick();
         roomPlayback.Tick();
         songTransfer.Tick();
         assignmentTransfer.Tick();
@@ -153,7 +193,7 @@ internal sealed class StageFeature : IDisposable
         controller.Poll();
         SynchronizeLibrary();
         controller.Room!.Tick();
-        if (!controller.Room.IsRemote) queue.Tick();
+        if (!controller.Room.IsRemote && !largeEnsemble.Enabled) queue.Tick();
         queuePort.Tick();
         if (requests.IssueCount != requestIssueCount) { requestIssueCount = requests.IssueCount; controller.SetStatus(requests.LastIssue, true); }
         ipc.Poll();
@@ -175,8 +215,12 @@ internal sealed class StageFeature : IDisposable
         PartyChatCommand.ManualPlanPublisher = null;
         PartyChatCommand.ManualPlanReceiver = null;
         assignmentTransfer.Dispose();
+        MidiBardLargeEnsembleBackend.Proof -= largeEnsemble.ReceiveProof;
+        MidiBardLargeEnsembleBackend.ModeEnabled = null;
+        largeEnsemble.Dispose();
         movement.Dispose();
         PartyChatCommand.StageProof -= roomPlayback.ReceiveProof;
+        EnsembleManager.EnsembleStopped -= playback.StopPendingFinish;
         queue.Dispose(); roomPlayback.Dispose(); playback.Dispose(); requests.Dispose(); ipc.Dispose();
         windows.RemoveAllWindows(); window.Dispose(); controller.Dispose(); UiKit.IconFont = null;
     }

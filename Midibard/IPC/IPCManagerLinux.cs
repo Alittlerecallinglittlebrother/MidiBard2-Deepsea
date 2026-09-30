@@ -72,6 +72,7 @@ internal class LinuxIPCManager : IIPCManager
                     PluginLog.Verbose("Try dequeue message");
                     while (_messageQueue.TryDequeue(out var dequeue))
                     {
+                        if (StageIntegration.MidiBardLargeEnsembleBackend.Active) continue;
                         try
                         {
                             var message = dequeue.serialized;
@@ -141,14 +142,14 @@ internal class LinuxIPCManager : IIPCManager
 
     private void ProcessMessage(IPCEnvelope message)
     {
-        if (!MidiBard.config.SyncClients) return;
+        if (!MidiBard.config.SyncClients || StageIntegration.MidiBardLargeEnsembleBackend.Active) return;
         _methodInfos[message.MessageType](message);
     }
 
     public void BroadCast(byte[] serialized, bool includeSelf = false)
     {
         if (_initFailed) return;
-        if (!MidiBard.config.SyncClients) return;
+        if (!MidiBard.config.SyncClients || StageIntegration.MidiBardLargeEnsembleBackend.Active) return;
         try
         {
             PluginLog.Verbose($"Queuing message. length: {Dalamud.Utility.Util.FormatBytes(serialized.Length)}" +

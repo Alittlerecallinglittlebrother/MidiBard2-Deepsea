@@ -33,6 +33,7 @@ namespace MidiBard;
 public partial class PluginUI
 {
     private bool ShowEnsembleWindow;
+    internal void OpenEnsembleWindow() => ShowEnsembleWindow = true;
 #nullable enable
     internal static Action<string, Vector2, Vector2>? EnsembleItemBounds { get; set; }
 #nullable restore
@@ -40,24 +41,48 @@ public partial class PluginUI
     private void DrawEnsembleWindow()
     {
         if (!ShowEnsembleWindow) return;
-        if (!api.PartyList.IsPartyLeader()) return;
+        var canControl = api.PartyList.Length >= 2 && api.PartyList.IsPartyLeader()
+            && !StageIntegration.MidiBardLargeEnsembleBackend.Active;
 
         // ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, 2f);
         // ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(ImGui.GetStyle().ItemSpacing.X, ImGui.GetStyle().ItemSpacing.Y));
         // ImGui.PushStyleColor(ImGuiCol.TitleBgActive, Style.Components.WindowBg);
         // ImGui.PushStyleColor(ImGuiCol.TitleBg, Style.Components.WindowBg);
-        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, ImGui.GetStyle().FramePadding * 2.5f);
+        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, ImGui.GetStyle().FramePadding * 1.2f);
         ImGui.PushStyleVar(ImGuiStyleVar.CellPadding, new Vector2(ImGui.GetStyle().CellPadding.Y));
 
         if (ImGui.Begin(Language.window_title_ensemble_panel + "###ensembleWindow", ref ShowEnsembleWindow))
         {
+            ImGui.TextWrapped(api.PartyList.Length < 2
+                ? "尚未组队：可以提前设置。分配演奏人、全员取出乐器和准备确认需要先组成小队。"
+                : StageIntegration.MidiBardLargeEnsembleBackend.Active ? "多人合奏已启用，请在演出助手的“多人合奏”页下发与开演。"
+                : canControl ? "小队队长：选曲，检查分配，全员取出乐器，再准备合奏。"
+                : "小队成员：等待队长选曲。收到队长的自动分配后，本机会按本曲安排取出乐器。无需开启自己的自动分配开关。");
+            EnsembleItemBounds?.Invoke("ensembleRole", ImGui.GetItemRectMin(), ImGui.GetItemRectMax());
+            if (ImGui.CollapsingHeader("本机接收设置（首次使用请检查）", api.PartyList.Length < 2 ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None))
+            {
+            ImGui.BeginDisabled(StageIntegration.MidiBardLargeEnsembleBackend.Active || PartyChatCommand.IsLoading
+                || MidiBard.IsPlaying || MidiBard.AgentMetronome.EnsembleModeRunning);
+            var settingsChanged = ImGui.Checkbox("接收同机控制", ref MidiBard.config.SyncClients);
+            settingsChanged |= ImGui.Checkbox("接收跨电脑小队控制（PMD）", ref MidiBard.config.playOnMultipleDevices);
+            settingsChanged |= ImGui.Checkbox("跟随游戏合奏准备确认", ref MidiBard.config.MonitorOnEnsemble);
+            if (settingsChanged) MidiBard.SaveConfig();
+            ImGui.EndDisabled();
+            if (!MidiBard.config.SyncClients && !MidiBard.config.playOnMultipleDevices)
+                ImGui.TextWrapped("尚未开启控制接收：队员需要开启与队长相同的控制方式，才能接收选曲和配器。");
+            if (!MidiBard.config.MonitorOnEnsemble)
+                ImGui.TextWrapped("跟随准备确认已关闭：本机不会随游戏小队合奏自动开始。");
+            }
+            ImGui.Separator();
             // fixed header
             // float headerStartY = ImGui.GetCursorPosY();
             var toolbarHeight = ImGui.GetFrameHeight() + ImGui.GetStyle().ItemSpacing.Y * 2;
-            if (PartyChatCommand.EnsembleLoadIssue is { } loadIssue)
+            if (canControl && PartyChatCommand.EnsembleLoadIssue is { } loadIssue)
                 toolbarHeight += ImGui.CalcTextSize(loadIssue, false, Math.Max(1, ImGui.GetContentRegionAvail().X)).Y + ImGui.GetStyle().ItemSpacing.Y;
             ImGui.BeginChild("##EnsembleControlMenuFixedHeight", new Vector2(-1, toolbarHeight), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+            ImGui.BeginDisabled(!canControl);
             DrawEnsembleControlMenu();
+            ImGui.EndDisabled();
             ImGui.EndChild();
 
             ImGui.Separator();
@@ -65,12 +90,12 @@ public partial class PluginUI
             var playback = MidiBard.CurrentPlayback;
             var loading = PartyChatCommand.IsLoading;
             ImGui.BeginDisabled(loading || playback?.IsSoloPlayback == true || MidiBard.IsPlaying || MidiBard.AgentMetronome.EnsembleModeRunning);
-            if (ImGui.Checkbox("自动分配乐器与演奏人", ref MidiBard.config.AutoAssignEnsembleTracks))
+            if (ImGui.Checkbox("我作为队长时自动分配乐器与演奏人", ref MidiBard.config.AutoAssignEnsembleTracks))
             {
                 try
                 {
                     PartyChatCommand.InvalidateAssignment();
-                    if (playback is { } loaded)
+                    if (canControl && playback is { } loaded)
                     {
                         if (MidiBard.config.AutoAssignEnsembleTracks)
                             loaded.MidiFileConfig = AutomaticEnsembleAssignment.Create(loaded.TrackInfos,
@@ -85,22 +110,22 @@ public partial class PluginUI
                 }
                 catch (Exception ex) { api.ChatGui.PrintError("[MidiBard] " + ex.Message); }
                 MidiBard.SaveConfig();
-                if (!MidiBard.config.playOnMultipleDevices) IPCHandles.SyncAllSettings();
             }
+            EnsembleItemBounds?.Invoke("ensembleAutoAssign", ImGui.GetItemRectMin(), ImGui.GetItemRectMax());
             ImGui.EndDisabled();
+            ImGui.TextWrapped("自动分配决定自己选曲时的行为；队员接收队长自动分配时，本曲跟随队长，本机默认设置保留。");
             if (!loading && playback?.MidiFileConfig is { AutomaticallyAssigned: true } assigned)
             {
                 var tracks = assigned.Tracks;
-                ImGui.SameLine();
                 ImGui.TextDisabled($"{tracks.Count(t => t.Enabled)} / {tracks.Count} 轨已分配");
             }
 
             ImGui.BeginChild("##EnsembleScrollableContent", new Vector2(-1, 0), false, ImGuiWindowFlags.HorizontalScrollbar);
 
-            if (PartyChatCommand.ManualDistributionMode)
+            if (canControl && PartyChatCommand.ManualDistributionMode)
             {
                 ImGui.TextWrapped("手动分配：指定每轨的演奏人、乐器和移调，再统一下发。队员会使用本次分配，无需调整自己的自动分配开关。");
-                ImGui.BeginDisabled(loading || playback?.MidiFileConfig == null || playback.IsSoloPlayback
+                ImGui.BeginDisabled(!canControl || loading || playback?.MidiFileConfig == null || playback.IsSoloPlayback
                     || MidiBard.IsPlaying || MidiBard.AgentMetronome.EnsembleModeRunning);
                 if (ImGui.Button("下发歌曲与手动分配", new Vector2(-1, 0))) PartyChatCommand.SendManualAssignment();
                 EnsembleItemBounds?.Invoke("manualDistribute", ImGui.GetItemRectMin(), ImGui.GetItemRectMax());
@@ -115,9 +140,10 @@ public partial class PluginUI
                 ImGui.TextUnformatted("正在载入曲目...");
             }
             else if (!MidiBard.config.AutoAssignEnsembleTracks && MidiBard.config.playOnMultipleDevices
+                && playback?.MidiFileConfig?.AutomaticallyAssigned != true && playback?.MidiFileConfig?.LeaderDistributed != true
                 && !MidiBard.config.usingFileSharingServices && !PartyChatCommand.ManualDistributionMode)
             {
-                ImGui.Button($"You are NOT using file sharing services to sync settings.\nTrack assign is disabled.\nPlease choose the tracks on clients individually.", new Vector2(-1, 100));
+                ImGui.TextWrapped("手动分配需要开启跨电脑歌曲同步并连接房间；未使用歌曲同步时，请在各队员端自行选择轨道。");
             }
             else if (playback == null)
             {
@@ -162,7 +188,7 @@ public partial class PluginUI
                         .Select(partyMember => partyMember.Cid != 0 ? $"{partyMember.Name}·{partyMember.World}" : "")
                         .ToArray();
 
-                    ImGui.BeginDisabled(fileConfig.AutomaticallyAssigned || loading || MidiBard.IsPlaying || MidiBard.AgentMetronome.EnsembleModeRunning);
+                    ImGui.BeginDisabled(!canControl || fileConfig.AutomaticallyAssigned || loading || MidiBard.IsPlaying || MidiBard.AgentMetronome.EnsembleModeRunning);
                     if (ImGui.BeginTable("fileConfig.Tracks", 4, ImGuiTableFlags.SizingFixedFit))
                     {
                         ImGui.TableSetupColumn("轨道", ImGuiTableColumnFlags.WidthStretch, 1);

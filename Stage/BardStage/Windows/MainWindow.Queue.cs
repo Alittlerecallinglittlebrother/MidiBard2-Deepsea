@@ -13,50 +13,44 @@ public sealed partial class MainWindow
     private bool openQueueSettings;
     private int queueGap;
 
+    private static bool QueueButton(string label, string id, bool enabled = true)
+    {
+        ImGui.BeginDisabled(!enabled);
+        var clicked = ImGui.Button(label + "##" + id);
+        UiKit.RecordItem(id);
+        ImGui.EndDisabled();
+        return clicked;
+    }
+
     private void DrawAutomaticQueue()
     {
         var player = controller.QueueViewPlayback;
         var show = controller.QueueViewShow;
-        var reception = controller.QueueState.RequestSettings.IsOpen;
-        if (ImGui.Checkbox("接收点歌", ref reception)) controller.QueueCommand(RoomAction.Reception, value: reception);
-        ImGui.SameLine();
-        if (UiKit.Icon(FontAwesomeIcon.Cog, "queueSettings", "点歌频道、口令与限制"))
-        {
-            settingsDraft = StageController.Clone(controller.QueueState.RequestSettings);
-            queueGap = show?.GapSeconds ?? 3;
-            openQueueSettings = true;
-        }
-        ImGui.SameLine();
+        ImGui.TextUnformatted("演奏方式"); ImGui.SameLine();
         ImGui.BeginDisabled(player.ActiveEntryId != null || player.Loading);
         var mode = controller.QueueState.RequestSettings.PlaybackMode;
         if (ImGui.RadioButton("单人演奏##queueSolo", mode == QueuePlaybackMode.Solo))
             controller.QueueCommand(RoomAction.PlaybackMode, number: (int)QueuePlaybackMode.Solo);
         UiKit.RecordItem("queueSolo");
         ImGui.SameLine();
-        if (ImGui.RadioButton("合奏主控##queueEnsemble", mode == QueuePlaybackMode.Ensemble))
+        if (ImGui.RadioButton("八人以内小队##queueEnsemble", mode == QueuePlaybackMode.Ensemble))
             controller.QueueCommand(RoomAction.PlaybackMode, number: (int)QueuePlaybackMode.Ensemble);
         UiKit.RecordItem("queueEnsemble");
         ImGui.EndDisabled();
-        var command = "口令：" + controller.QueueState.RequestSettings.Prefix + " 曲名";
-        if (ImGui.GetCursorScreenPos().X + ImGui.GetContentRegionAvail().X - ImGui.GetItemRectMax().X
-            > ImGui.CalcTextSize(command).X + ImGui.GetStyle().ItemSpacing.X)
-            ImGui.SameLine();
-        UiKit.MutedText(command);
-        ImGui.Spacing();
-        if (UiKit.Icon(FontAwesomeIcon.Play, "queuePlay", player.Paused ? "继续演奏" : "播放", !player.Playing && !player.Loading && (controller.Room?.HasRemoteControl == true || controller.QueuePlayer != null))) controller.QueueCommand(RoomAction.Start);
+        if (mode == QueuePlaybackMode.Ensemble)
+        {
+            ImGui.TextWrapped("由队长控制全队；首次合奏请先完成小队设置。");
+            if (QueueButton("检查小队准备", "queueSetup")) Navigate(Page.Party);
+        }
+        if (QueueButton(player.Paused ? "继续演奏" : "开始演奏", "queuePlay", !player.Playing && !player.Loading && (controller.Room?.HasRemoteControl == true || controller.QueuePlayer != null))) controller.QueueCommand(RoomAction.Start);
         ImGui.SameLine();
-        if (UiKit.Icon(FontAwesomeIcon.Pause, "queuePause", "暂停当前演奏", player.Playing)) controller.QueueCommand(RoomAction.Pause);
+        if (QueueButton("暂停", "queuePause", player.Playing)) controller.QueueCommand(RoomAction.Pause);
         ImGui.SameLine();
-        if (UiKit.Icon(FontAwesomeIcon.Stop, "queueStop", "停止当前演奏", player.ActiveEntryId != null || player.Loading)) controller.QueueCommand(RoomAction.Stop);
+        if (QueueButton("停止", "queueStop", player.ActiveEntryId != null || player.Loading)) controller.QueueCommand(RoomAction.Stop);
         ImGui.SameLine();
-        if (UiKit.Icon(FontAwesomeIcon.StepForward, "queueNext", "跳过当前曲目", show?.Entries.Any(e => e.Status is EntryStatus.Queued or EntryStatus.InProgress) == true)) controller.QueueCommand(RoomAction.Skip);
-        ImGui.SameLine();
-        if (UiKit.Icon(FontAwesomeIcon.Plus, "queueAdd", "从曲库加歌")) { queueSearch = ""; resolveRequestId = null; ImGui.OpenPopup("加歌##QueuePicker"); }
-        ImGui.SameLine();
-        if (UiKit.Icon(FontAwesomeIcon.Sync, "queueImport", "导入 MidiBard 当前播放列表", controller.ImportPlayerLibrary != null && controller.Room?.IsRemote != true)) controller.ImportPlayerLibrary?.Invoke();
-        ImGui.SameLine();
+        if (QueueButton("跳过这首", "queueNext", show?.Entries.Any(e => e.Status is EntryStatus.Queued or EntryStatus.InProgress) == true)) controller.QueueCommand(RoomAction.Skip);
         var continuous = player.Enabled;
-        if (ImGui.Checkbox("自动连播", ref continuous)) controller.QueueCommand(RoomAction.Continuous, value: continuous);
+        if (ImGui.Checkbox("自动连播（本曲结束后继续下一首）", ref continuous)) controller.QueueCommand(RoomAction.Continuous, value: continuous);
         UiKit.RecordItem("queueContinuous");
         UiKit.Tip("本曲结束后自动播放下一首");
         ImGui.TextWrapped(player.Status);
@@ -64,7 +58,23 @@ public sealed partial class MainWindow
             if (ImGui.Button("重试保存")) { controller.RetryPlayback(); controller.RetryPendingChat(); }
         ImGui.Separator();
 
-        var height = Math.Max(80, ImGui.GetContentRegionAvail().Y - 65 * UiKit.Scale);
+        if (QueueButton("从曲库加歌", "queueAdd")) { queueSearch = ""; resolveRequestId = null; ImGui.OpenPopup("加歌##QueuePicker"); }
+        ImGui.SameLine();
+        if (QueueButton("去曲库导入 MIDI", "queueLibrary", !Viewer)) Navigate(Page.Library);
+        var reception = controller.QueueState.RequestSettings.IsOpen;
+        if (ImGui.Checkbox("接收观众聊天点歌", ref reception)) controller.QueueCommand(RoomAction.Reception, value: reception);
+        UiKit.RecordItem("queueReception"); ImGui.SameLine();
+        if (QueueButton("点歌设置", "queueSettings"))
+        {
+            settingsDraft = StageController.Clone(controller.QueueState.RequestSettings);
+            queueGap = show?.GapSeconds ?? 3;
+            openQueueSettings = true;
+        }
+        if (reception) ImGui.TextWrapped("观众输入：" + controller.QueueState.RequestSettings.Prefix + " 曲名  ·  "
+            + string.Join("、", controller.QueueState.RequestSettings.Channels.Select(ChannelLabel)));
+        ImGui.Separator();
+
+        var height = Math.Max(180 * UiKit.Scale, ImGui.GetContentRegionAvail().Y - 8 * UiKit.Scale);
         if (ImGui.BeginChild("QueueContent", new Vector2(0, height), false))
         {
             show = controller.QueueViewShow;
@@ -76,7 +86,7 @@ public sealed partial class MainWindow
             }
             var entries = show?.Entries.Where(e => e.Status is EntryStatus.Queued or EntryStatus.InProgress).ToArray() ?? [];
             ImGui.TextUnformatted($"待演队列  {entries.Length} 首");
-            if (entries.Length == 0) UiKit.MutedText("暂无待演曲目");
+            if (entries.Length == 0) ImGui.TextWrapped("队列为空。点击“从曲库加歌”，选好后再点“开始演奏”；也可以开启观众点歌。");
             else DrawQueueRows(show!, entries, false);
 
             var unresolved = controller.QueueState.Requests.Where(r => r.SetlistId == show?.Id && r.Status is RequestStatus.Pending or RequestStatus.Deferred)
@@ -103,7 +113,9 @@ public sealed partial class MainWindow
             }
             var history = show?.Entries.Where(e => e.Status is EntryStatus.Completed or EntryStatus.Skipped).Reverse().ToArray() ?? [];
             ImGui.Spacing();
-            if (ImGui.CollapsingHeader($"已结束  {history.Length} 首###QueueHistoryHeader"))
+            var historyOpen = ImGui.CollapsingHeader($"已结束  {history.Length} 首###QueueHistoryHeader");
+            UiKit.RecordItem("queueHistory");
+            if (historyOpen)
             {
                 if (UiKit.Icon(FontAwesomeIcon.Trash, "clearQueueHistory", "清理全部已结束节目", history.Length > 0)) ConfirmClearFinished(show!, true);
                 ImGui.SameLine(); UiKit.MutedText("清理已结束");
@@ -238,6 +250,9 @@ public sealed partial class MainWindow
         settingsDraft.MaxOutstandingPerPerson = limit; settingsDraft.DuplicateCooldownSeconds = cooldown; settingsDraft.MaxQueueSize = capacity;
         if (ImGui.Button("保存设置"))
             if (controller.QueueCommand(RoomAction.Settings, settings: StageController.Clone(settingsDraft), number: queueGap)) ImGui.CloseCurrentPopup();
+        ImGui.SameLine();
+        if (ImGui.Button("取消##queueSettingsCancel")) ImGui.CloseCurrentPopup();
+        UiKit.RecordItem("queueSettingsCancel");
         if (controller.StatusIsError) ImGui.TextWrapped(controller.StatusMessage);
         ImGui.EndPopup();
     }

@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using BardStage;
 using BardStage.Core;
 using BardStage.Windows;
@@ -13,6 +13,28 @@ internal static unsafe partial class RuntimeUi
         var bounds = items[id];
         var point = (bounds.Min + bounds.Max) / 2;
         Click(window, point.X, point.Y, width, height);
+    }
+
+    private static void NavigateUi(MainWindow window, string id, int width=1100, int height=740)
+    {
+        Frame(window,width,height); Frame(window,width,height);
+        if ((width-16)/UiKit.Scale<900)
+        { ClickItem(window,"workspacePage",width,height); Frame(window,width,height); }
+        ClickItem(window,id,width,height);
+        Frame(window,width,height); Frame(window,width,height);
+    }
+    private static void ShowItem(MainWindow window,string id,int width=1100,int height=740,string panelId="workspacePanel")
+    {
+        var io=ImGui.GetIO();
+        for(var attempt=0;attempt<60;attempt++)
+        {
+            Frame(window,width,height); Frame(window,width,height);
+            var r=items[id]; var panel=items[panelId];
+            if(r.Min.Y>=panel.Min.Y && r.Max.Y<=panel.Max.Y) return;
+            io.AddMousePosEvent(panel.Max.X-22,(panel.Min.Y+panel.Max.Y)/2);
+            io.AddMouseWheelEvent(0,r.Min.Y<panel.Min.Y?3:-3);
+        }
+        throw new InvalidOperationException($"Unreachable {id}: {items[id]} inside {items[panelId]}");
     }
 
     public static void Run(StageController source, string output)
@@ -59,6 +81,7 @@ internal static unsafe partial class RuntimeUi
             ImGui.GetStyle().WindowRounding = 0; ImGui.GetStyle().FrameRounding = 3;
             using var window = new MainWindow(controller);
             Frame(window, 1100, 740); Frame(window, 1100, 740);
+            NavigateUi(window,"queueTab");
             ClickItem(window, "queueEnsemble");
             if (controller.State.RequestSettings.PlaybackMode != QueuePlaybackMode.Ensemble) throw new InvalidOperationException("ensemble mode selection failed");
             ClickItem(window, "queueSolo");
@@ -152,7 +175,7 @@ internal static unsafe partial class RuntimeUi
             Click(window, bounds.X + 25, bounds.Y + 10, 760, 540);
             if (controller.CurrentSetlist.Entries.Count != count + 1) throw new InvalidOperationException("legacy search popup song not selectable");
             Console.WriteLine("PASS: original setlist search popup regression fixed and selected song persists");
-            Click(window, 89, 73, 760, 540); Invoke(window, "SelectSong", controller.State.Songs[0]);
+            NavigateUi(window,"libraryTab",760,540); Invoke(window, "SelectSong", controller.State.Songs[0]);
             Frame(window, 760, 540); Frame(window, 760, 540);
             SoftwareRenderer.Save(Path.Combine(output, "library-small.png"));
             Console.WriteLine("PASS: default queue rendered at 1100x740, 760x540 and 140% font scale");

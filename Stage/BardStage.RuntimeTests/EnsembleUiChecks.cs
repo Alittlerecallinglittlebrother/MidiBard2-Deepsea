@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Reflection;
 using Dalamud.Bindings.ImGui;
 
@@ -10,12 +10,15 @@ internal static unsafe partial class RuntimeUi
         var flags = BindingFlags.Instance | BindingFlags.NonPublic;
         typeof(MidiBard.PluginUI).GetField("ShowEnsembleWindow", flags)!.SetValue(window, true);
         var draw = typeof(MidiBard.PluginUI).GetMethod("DrawEnsembleWindow", flags)!;
-        foreach (var state in new[] { "empty", "solo", "unconfigured", "loading", "assigned" })
+        foreach (var state in new[] { "ungrouped", "member", "empty", "solo", "unconfigured", "loading", "assigned" })
         {
+            MidiBard.api.PartyList.Clear();
+            if(state!="ungrouped") MidiBard.api.PartyList.AddRange([new(),new()]);
+            MidiBard.api.PartyList.Leader=state!="member";
             MidiBard.PluginUI.LogPath = Path.Combine(output, "ensemble-" + state + ".log");
             File.WriteAllText(MidiBard.PluginUI.LogPath, "");
             MidiBard.Managers.PlaylistManager.IsLoading = state == "loading";
-            MidiBard.MidiBard.CurrentPlayback = state == "empty" ? null : new MidiBard.PlaybackFixture
+            MidiBard.MidiBard.CurrentPlayback = state is "empty" or "ungrouped" or "member" ? null : new MidiBard.PlaybackFixture
             {
                 IsSoloPlayback = state == "solo",
                 MidiFileConfig = state == "assigned" ? new MidiBard.MidiFileConfig
@@ -28,6 +31,7 @@ internal static unsafe partial class RuntimeUi
             {
                 ImGui.GetIO().DisplaySize = new Vector2(1100, 740);
                 ImGui.NewFrame(); ImGui.SetNextWindowPos(Vector2.Zero); ImGui.SetNextWindowSize(new Vector2(1100, 740));
+                ImGui.LogToFile(-1,MidiBard.PluginUI.LogPath);
                 draw.Invoke(window, null);
                 ImGui.LogFinish();
                 ImGui.Render();
@@ -39,6 +43,8 @@ internal static unsafe partial class RuntimeUi
                 throw new InvalidOperationException("ensemble view displayed an exception: " + state);
             var expected = state switch
             {
+                "ungrouped" => "尚未组队",
+                "member" => "小队成员",
                 "solo" => "当前曲目：单人演奏",
                 "unconfigured" => "当前曲目未加载合奏配置",
                 "loading" => "正在载入曲目",
@@ -63,7 +69,7 @@ namespace MidiBard
         public static string LogPath = "";
         private void DrawEnsembleControlMenu()
         {
-            ImGui.LogToFile(-1, LogPath);
+
             if (PartyChatCommand.EnsembleLoadIssue is { } issue) ImGui.TextWrapped(issue);
         }
         // Native game icon textures are substituted; preserve the production picker's footprint.
@@ -92,8 +98,10 @@ namespace MidiBard
     }
     internal sealed class PartyFixture : List<MemberFixture>
     {
-        internal PartyFixture() { Add(new MemberFixture()); }
-        internal bool IsPartyLeader() => true;
+        internal PartyFixture() { Add(new MemberFixture()); Add(new MemberFixture()); }
+        internal int Length => Count;
+        internal bool Leader = true;
+        internal bool IsPartyLeader() => Leader;
     }
     internal sealed class MemberFixture
     {
@@ -115,6 +123,7 @@ namespace MidiBard
     internal sealed class ConfigFixture
     {
         internal bool AutoAssignEnsembleTracks = true;
+        internal bool SyncClients = true, MonitorOnEnsemble = true;
         internal bool playOnMultipleDevices = false;
         internal bool usingFileSharingServices = false;
         internal bool EnableCrossComputerSongSync;
@@ -200,3 +209,5 @@ namespace MidiBard2.Resources
         internal static string ensemble_combo_tooltip_assign_track_character => "Performer";
     }
 }
+
+namespace MidiBard.StageIntegration { internal static class MidiBardLargeEnsembleBackend { internal static bool Active; } }

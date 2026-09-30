@@ -37,7 +37,7 @@ public sealed partial class MainWindow : Window, IDisposable
     private string pathDraft = "";
 
     public MainWindow(StageController controller)
-        : base("midibard2-深海回响特供版 · 自动点歌##BardStage", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
+        : base("midibard2-深海回响改 · 演出助手##BardStage", ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
         this.controller = controller;
         Size = new Vector2(1100, 740);
@@ -48,152 +48,7 @@ public sealed partial class MainWindow : Window, IDisposable
     public void DrawDialogs() => dialogs.Draw();
     public void Dispose() => dialogs.Reset();
 
-    public override void Draw()
-    {
-        var scale = UiKit.Scale;
-        var viewer = controller.Room is { IsViewer: true, HasRemoteControl: false };
-        ImGui.TextUnformatted("midibard2-深海回响特供版 / 自动点歌");
-        ImGui.SameLine();
-        UiKit.MutedText(viewer ? "队员查看" : $"曲库 {controller.QueueState.Songs.Count} 首");
-        if (!viewer)
-        {
-            ImGui.SameLine();
-            if (UiKit.Icon(FontAwesomeIcon.FolderOpen, "data", "打开数据目录")) controller.OpenPath(controller.DataDirectory);
-        }
-        var contactWidth = ImGui.CalcTextSize("联系作者").X + ImGui.GetStyle().FramePadding.X * 2;
-        ImGui.SameLine();
-        if (ImGui.GetContentRegionAvail().X < contactWidth) ImGui.NewLine();
-        else ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - contactWidth);
-        if (ImGui.Button("联系作者##contactAuthor", new Vector2(contactWidth, 0))) controller.ContactAuthor();
-        UiKit.RecordItem("contactAuthor");
-        UiKit.Tip(StageController.AuthorWebsite);
-        if (controller.IsReadOnly && controller.Room?.IsRemote != true) ImGui.TextColored(UiKit.Warning, "当前只读");
-        if (controller.Room is { } room && (room.IsCaptain || room.IsRemote)) ImGui.TextWrapped(room.ConnectionStatus);
-        if (controller.LocalQueueControlIssue is { } controlIssue && controller.Room?.IsCaptain != true)
-        {
-            ImGui.TextWrapped(controlIssue);
-            if (controller.State.RequestSettings.PlaybackMode == QueuePlaybackMode.Ensemble
-                && controller.QueuePlayer?.IsLoading != true && controller.QueuePlayer?.IsEnginePlaying != true
-                && !controller.State.Setlists.Any(s => StageOperations.Current(s) != null))
-            {
-                ImGui.BeginDisabled(controller.IsReadOnly || controller.IsBusy);
-                if (ImGui.RadioButton("单人演奏##authoritySolo", false))
-                    controller.QueueCommand(BardStage.Core.Rooms.RoomAction.PlaybackMode, number: (int)QueuePlaybackMode.Solo);
-                UiKit.RecordItem("authoritySolo");
-                ImGui.EndDisabled();
-            }
-        }
-        ImGui.Separator();
-        var tabPosition = ImGui.GetCursorScreenPos();
-        var availableWidth = ImGui.GetContentRegionAvail().X;
-        var style = ImGui.GetStyle();
-        float TabWidth(string label) => ImGui.CalcTextSize(label).X + style.FramePadding.X * 2 + style.ItemInnerSpacing.X;
-        var tabsWidth = TabWidth(viewer ? "演出列表" : "点歌队列")
-            + (!viewer ? TabWidth("曲库") : 0)
-            + (controller.Room?.IsRemote != true ? TabWidth("更多") : 0)
-            + (controller.Room != null ? TabWidth("演出房间") : 0);
-        if (controller.Room?.Movement != null) tabsWidth += TabWidth("移动与队形");
-        // Leave room for text measurement rounding at the right edge.
-        var noticeWidth = ImGui.CalcTextSize(PluginNotice).X + 4;
-        var noticeInline = tabsWidth + style.ItemSpacing.X * 2 + noticeWidth <= availableWidth;
-        if (ImGui.BeginTabBar("MainTabs"))
-        {
-            if (ImGui.BeginTabItem(viewer ? "演出列表" : "点歌队列"))
-            {
-                if (!noticeInline) DrawPluginNotice();
-                if (viewer) DrawViewerQueue();
-                else
-                {
-                    ImGui.BeginDisabled(!controller.CanEditQueue);
-                    DrawAutomaticQueue();
-                    ImGui.EndDisabled();
-                }
-                ImGui.EndTabItem();
-            }
-            if (!viewer && ImGui.BeginTabItem("曲库"))
-            {
-                if (!noticeInline) DrawPluginNotice();
-                if (controller.Room?.IsRemote == true)
-                {
-                    ImGui.BeginDisabled(!controller.CanEditQueue);
-                    DrawSharedLibrary();
-                    ImGui.EndDisabled();
-                }
-                else DrawLibrary();
-                ImGui.EndTabItem();
-            }
-            if (controller.Room?.IsRemote != true && ImGui.BeginTabItem("更多", selectSetlistTab ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None))
-            {
-                if (!noticeInline) DrawPluginNotice();
-                ImGui.BeginDisabled(controller.IsReadOnly || controller.IsBusy);
-                if (ImGui.BeginTabBar("AdvancedTabs"))
-                {
-                    if (ImGui.BeginTabItem("节目单", selectSetlistTab ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None))
-                    {
-                        selectSetlistTab = false;
-                        ImGui.BeginDisabled(!controller.CanEditQueue);
-                        DrawSetlists();
-                        ImGui.EndDisabled();
-                        ImGui.EndTabItem();
-                    }
-                    if (ImGui.BeginTabItem("演出记录")) { DrawSessions(); ImGui.EndTabItem(); }
-                    ImGui.EndTabBar();
-                }
-                ImGui.EndDisabled();
-                ImGui.EndTabItem();
-            }
-            if (controller.Room != null)
-            {
-                var roomTab = ImGui.BeginTabItem("演出房间");
-                UiKit.RecordItem("roomTab");
-                if (roomTab)
-                {
-                    if (!noticeInline) DrawPluginNotice();
-                    if (ImGui.BeginChild("RoomSettings", new Vector2(0, Math.Max(120, ImGui.GetContentRegionAvail().Y - 65 * scale)), false))
-                        DrawRoom();
-                    ImGui.EndChild(); ImGui.EndTabItem();
-                }
-            }
-            if (controller.Room?.Movement != null)
-            {
-                var movementTab = ImGui.BeginTabItem("移动与队形");
-                UiKit.RecordItem("movementTab");
-                if (movementTab)
-                {
-                    if (!noticeInline) DrawPluginNotice();
-                    if (ImGui.BeginChild("MovementPanel", new Vector2(0, Math.Max(120, ImGui.GetContentRegionAvail().Y - 65 * scale)), false))
-                        DrawMovement();
-                    ImGui.EndChild(); UiKit.RecordItem("movementPanel"); ImGui.EndTabItem();
-                }
-            }
-            ImGui.EndTabBar();
-            if (noticeInline)
-            {
-                var contentPosition = ImGui.GetCursorScreenPos();
-                ImGui.SetCursorScreenPos(new Vector2(tabPosition.X + availableWidth - noticeWidth, tabPosition.Y + style.FramePadding.Y));
-                DrawPluginNotice();
-                ImGui.SetCursorScreenPos(contentPosition);
-            }
-        }
-        var footerHeight = 55 * scale;
-        var targetY = ImGui.GetWindowHeight() - footerHeight;
-        if (ImGui.GetCursorPosY() < targetY) ImGui.SetCursorPosY(targetY);
-        ImGui.Separator();
-        if (ImGui.BeginChild("Status", new Vector2(0, 42 * scale), false))
-        {
-            if (!string.IsNullOrEmpty(controller.StatusMessage))
-            {
-                ImGui.PushStyleColor(ImGuiCol.Text, controller.StatusIsError ? UiKit.Warning : UiKit.Muted);
-                ImGui.TextWrapped(controller.StatusMessage);
-                ImGui.PopStyleColor();
-            }
-            else UiKit.MutedText("已保存至本地");
-        }
-        ImGui.EndChild();
-        DrawModals();
-        DrawRequestModals();
-        DrawStageModals();
-    }
+    public override void Draw() => DrawWorkspace();
 
     private static void DrawPluginNotice()
     {
@@ -216,13 +71,13 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         // Synchronization locks catalog mutations, not local browsing or the active search input.
         ImGui.BeginDisabled(!controller.CanEditQueue);
-        if (UiKit.Icon(FontAwesomeIcon.FileImport, "importFiles", "导入 MIDI 文件"))
+        if (QueueButton("导入 MIDI", "importFiles"))
             dialogs.OpenFileDialog("导入 MIDI", ".mid,.midi", (ok, paths) => { if (ok) controller.Import(paths); }, 9999, null!, false);
         ImGui.SameLine();
-        if (UiKit.Icon(FontAwesomeIcon.FolderPlus, "importFolder", "导入文件夹及子文件夹"))
+        if (QueueButton("导入文件夹", "importFolder"))
             dialogs.OpenFolderDialog("导入 MIDI 文件夹", (ok, path) => { if (ok) controller.Import([path]); });
         ImGui.SameLine();
-        if (UiKit.Icon(FontAwesomeIcon.Sync, "importPlayer", "刷新共享曲库", controller.ImportPlayerLibrary != null)) controller.ImportPlayerLibrary?.Invoke();
+        if (QueueButton("刷新原生曲库", "importPlayer", controller.ImportPlayerLibrary != null)) controller.ImportPlayerLibrary?.Invoke();
         ImGui.SameLine();
         if (UiKit.Icon(FontAwesomeIcon.TrashAlt, "clearLibrary", "清空曲库", controller.State.Songs.Count > 0 && !controller.IsBusy))
             Confirm($"清空全部 {controller.State.Songs.Count} 首歌曲？将同步清空 MidiBard 中的对应歌曲，并移除节目单中的关联条目。MIDI 原文件和演出记录保留。", () =>
@@ -230,7 +85,6 @@ public sealed partial class MainWindow : Window, IDisposable
                 if (controller.ClearLibrary()) selectedSongId = null;
             });
         ImGui.EndDisabled();
-        ImGui.SameLine();
         ImGui.SetNextItemWidth(Math.Max(120, Math.Min(230 * UiKit.Scale, ImGui.GetContentRegionAvail().X - 140 * UiKit.Scale)));
         ImGui.InputTextWithHint("##search", "搜索曲名、别名、编曲者", ref search, 256);
         UiKit.RecordItem("librarySearch");
@@ -238,12 +92,30 @@ public sealed partial class MainWindow : Window, IDisposable
         ImGui.SetNextItemWidth(120 * UiKit.Scale);
         if (ImGui.BeginCombo("##performerFilter", performerFilter < 0 ? "全部人数" : performerFilter == 0 ? "人数未填写" : $"{performerFilter} 人"))
         {
-            for (var i = -1; i <= 8; i++)
+            for (var i = -1; i <= 16; i++)
                 if (ImGui.Selectable(i < 0 ? "全部人数" : i == 0 ? "人数未填写" : $"{i} 人", performerFilter == i)) performerFilter = i;
             ImGui.EndCombo();
         }
         ImGui.Spacing();
-        var height = Math.Max(200, ImGui.GetContentRegionAvail().Y - 65 * UiKit.Scale);
+        var height = Math.Max(240 * UiKit.Scale, ImGui.GetContentRegionAvail().Y - 8 * UiKit.Scale);
+        if (ImGui.GetContentRegionAvail().X / UiKit.Scale < 740)
+        {
+            if (ImGui.BeginTabBar("CompactLibrary"))
+            {
+                if (ImGui.BeginTabItem("歌曲列表"))
+                {
+                    if(ImGui.BeginChild("SongList",new(0,height),false)) DrawSongTable();
+                    ImGui.EndChild(); ImGui.EndTabItem();
+                }
+                if (ImGui.BeginTabItem("所选歌曲详情"))
+                {
+                    if(ImGui.BeginChild("SongInspector",new(0,height),false)) DrawSongInspector();
+                    ImGui.EndChild(); ImGui.EndTabItem();
+                }
+                ImGui.EndTabBar();
+            }
+            return;
+        }
         if (ImGui.BeginTable("LibraryLayout", 2, ImGuiTableFlags.Resizable | ImGuiTableFlags.BordersInnerV))
         {
             ImGui.TableSetupColumn("list", ImGuiTableColumnFlags.WidthStretch, 0.62f);

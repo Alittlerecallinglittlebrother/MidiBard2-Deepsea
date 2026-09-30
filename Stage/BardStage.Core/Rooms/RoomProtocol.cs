@@ -57,10 +57,15 @@ public sealed class RoomSnapshot
     public ulong ExecutorCid { get; set; }
     public string ExecutionStatus { get; set; } = "";
     public bool MovementSupported { get; set; }
+    public bool LargeEnsembleSupported { get; set; }
+    public int PerformerCapacity { get; set; } = 8;
+    public int TimingVersion { get; set; }
 
     internal RoomSnapshot ForController() => new()
     {
+        TimingVersion = TimingVersion,
         MovementSupported = MovementSupported,
+        LargeEnsembleSupported = LargeEnsembleSupported, PerformerCapacity = PerformerCapacity,
         RoomId = RoomId, Revision = Revision, Catalog = Catalog, Playback = Playback,
         PresenterReceivesChat = PresenterReceivesChat, CanControl = true,
         AuthorityEpoch = AuthorityEpoch, ExecutorCid = ExecutorCid, ExecutionStatus = ExecutionStatus,
@@ -68,7 +73,9 @@ public sealed class RoomSnapshot
 
     internal RoomSnapshot ForViewer() => new()
     {
+        TimingVersion = TimingVersion,
         MovementSupported = MovementSupported,
+        LargeEnsembleSupported = LargeEnsembleSupported, PerformerCapacity = PerformerCapacity,
         RoomId = RoomId, Revision = Revision, Playback = Playback,
         AuthorityEpoch = AuthorityEpoch, ExecutorCid = ExecutorCid, ExecutionStatus = ExecutionStatus,
         Catalog = new CatalogState
@@ -91,11 +98,16 @@ public sealed class RoomSnapshot
 
 public sealed class RoomPacket
 {
+    public ClockExchange? Clock { get; set; }
+    [JsonIgnore] public double ReceivedAt { get; set; }
     public int Version { get; set; } = 1;
     public string Type { get; set; } = "";
     public string? Key { get; set; }
     public Guid RoomId { get; set; }
     public RoomRole Role { get; set; }
+    // Only advertised in hello; older clients cancel loads on duplicate grants.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int AuthorityRefreshVersion { get; set; }
     public RoomCommand? Command { get; set; }
     public RoomSnapshot? Snapshot { get; set; }
     public RoomResult? Result { get; set; }
@@ -111,6 +123,7 @@ public sealed class RoomPacket
     public RoomPlanRequest? PlanRequest { get; set; }
     public RoomPlanResult? PlanResult { get; set; }
     public MovementEnvelope? Movement { get; set; }
+    public LargeEnvelope? Large { get; set; }
 }
 
 public sealed record RoomInvite(string Host, int Port, string Fingerprint, string Key, Guid RoomId, RoomRole Role = RoomRole.Presenter)

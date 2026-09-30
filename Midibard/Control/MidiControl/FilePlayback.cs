@@ -63,6 +63,7 @@ public static class FilePlayback
     internal static Status waitStatus = Status.notWaiting;
     private static void Playback_Finished(object sender, EventArgs e)
     {
+        if (sender is BardPlayback large && large.LargePlanId != Guid.Empty) return;
         // Received songs have no playlist index. Never advance or mark an
         // unrelated personal song when their playback finishes.
         if (sender is BardPlayback received && received.FilePath != null
@@ -157,7 +158,9 @@ public static class FilePlayback
         catch (Exception e)
         {
             PluginLog.Warning(e.ToString());
+            api.ChatGui.PrintError("[MidiBard] 歌曲已载入，但乐器准备失败：" + e.Message);
             if (MidiBard.config.EnableCrossComputerSongSync && MidiBard.config.playOnMultipleDevices) throw;
+            return false;
         }
         finally
         {
@@ -196,6 +199,8 @@ public static class FilePlayback
         catch (Exception e)
         {
             PluginLog.Warning(e.ToString());
+            api.ChatGui.PrintError("[MidiBard] 歌曲已载入，但乐器准备失败：" + e.Message);
+            return false;
         }
 
         return true;

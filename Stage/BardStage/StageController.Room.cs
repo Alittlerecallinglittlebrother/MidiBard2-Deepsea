@@ -7,7 +7,8 @@ public sealed partial class StageController
 {
     public StageRoom? Room { get; set; }
     public Func<string?>? LocalEnsembleControlIssue { get; set; }
-    public string? LocalQueueControlIssue => Room?.IsRemote == true ? null
+    public string? LocalQueueControlIssue => Room?.LargeEnsemble?.Enabled == true ? "请在“独立合奏”页面操作"
+        : Room?.IsRemote == true ? null
         : Room?.Coordinator?.IsCoordinated == true ? Room.Coordinator.LocalControlIssue
         : Room?.HostingBlockReason ?? (State.RequestSettings.PlaybackMode == QueuePlaybackMode.Ensemble ? LocalEnsembleControlIssue?.Invoke() : null);
     public CatalogState QueueState => Room?.IsRemote == true ? Room.RemoteState : State;
@@ -36,6 +37,7 @@ public sealed partial class StageController
         try
         {
             if (!Enum.IsDefined(command.Action) || command.Id == Guid.Empty) throw new InvalidOperationException("房间操作无效");
+            if (Room?.LargeEnsemble?.Enabled == true) throw new InvalidOperationException("请在“独立合奏”页面操作");
             if (IsReadOnly || IsBusy) throw new InvalidOperationException("队长正在导入曲库或数据只读，请稍后重试");
             if (remote && (Room?.IsCaptain != true || command.RoomId != Room.Id)) throw new InvalidOperationException("演出房间已改变，请重新加入");
             var switchToSolo = !remote && Room?.IsCaptain != true && command.Action == RoomAction.PlaybackMode

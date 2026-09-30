@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -44,6 +45,30 @@ internal sealed class MidiBardQueuePort : IRoomEnsembleBackend
     // Owner loads use their cancellation token; follower loads track the actual party leader.
     public void Revoke() => RevokeControl();
     public bool OwnsPlayback(object value) => value is Playback playback && owned.TryGetValue(playback, out _);
+
+    public Func<bool>? CreateFinishBarrier(Playback playback)
+    {
+        if (!ReferenceEquals(playback, MidiBard.CurrentPlayback)
+            || !(ReferenceEquals(playback, expected) && loadedMode == QueuePlaybackMode.Ensemble
+                 || EnsembleManager.EnsembleRunning || MidiBard.AgentMetronome.EnsembleModeRunning)) return null;
+
+        // Native ensemble output lags MIDI input (the existing lyric path uses
+        // 4.045 s). This is a conservative playback/release allowance, not a
+        // measurement of audible completion. Never use the user's visual offset
+        // or the post-stop song gap as the completion condition.
+        var protection = TimeSpan.FromSeconds(6);
+        var tail = new PlaybackTailGuard(protection);
+        var elapsed = Stopwatch.StartNew();
+        var initial = MidiBard.BardPlayDevice.PlaybackOutputState;
+        api.PluginLog.Information($"[StageTail] MIDI finished; pending={initial.PendingEvents}; protection={protection.TotalSeconds:F1}s");
+        return () =>
+        {
+            var output = MidiBard.BardPlayDevice.PlaybackOutputState;
+            if (!tail.IsReady(output.PendingEvents, output.Revision)) return false;
+            api.PluginLog.Information($"[StageTail] Output drained and tail protected; waited={elapsed.Elapsed.TotalMilliseconds:F0}ms; pending={output.PendingEvents}");
+            return true;
+        };
+    }
 
     public string? BlockReason(QueuePlaybackMode mode)
     {
@@ -161,7 +186,10 @@ internal sealed class MidiBardQueuePort : IRoomEnsembleBackend
     public void Finish(QueuePlaybackMode mode)
     {
         if (mode == QueuePlaybackMode.Ensemble && HasLoadedAuthority && ReferenceEquals(expected, MidiBard.CurrentPlayback) && MidiBard.AgentMetronome.EnsembleModeRunning)
+        {
+            api.PluginLog.Information("[StageTail] Auto queue finishing ensemble after output completion");
             EnsembleManager.StopEnsemble();
+        }
     }
     public void Stop(QueuePlaybackMode mode, bool keepInstruments = false)
     {

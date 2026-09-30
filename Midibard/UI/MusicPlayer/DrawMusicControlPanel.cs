@@ -160,10 +160,12 @@ public partial class PluginUI
 
     private static void SetSpeed()
     {
+        if (MidiBard.CurrentPlayback is { LargePlanId: var largeId } && largeId != System.Guid.Empty) return;
         MidiBard.config.PlaySpeed = MidiBard.config.PlaySpeed.Clamp(0.1f, 10f);
         var currenttime = MidiBard.CurrentPlayback?.GetCurrentTime(TimeSpanType.Midi);
         if (currenttime is not null)
         {
+            MidiBard.BardPlayDevice.CancelLegacyPlaybackOutput();
             MidiBard.CurrentPlayback.Speed = MidiBard.config.PlaySpeed;
             MidiBard.CurrentPlayback?.MoveToTime(currenttime);
         }

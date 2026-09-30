@@ -1,4 +1,4 @@
-// Copyright (C) 2022 akira0245
+﻿// Copyright (C) 2022 akira0245
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -24,6 +24,7 @@ using Dalamud.Interface.Utility;
 using MidiBard.Control.MidiControl.PlaybackInstance;
 using MidiBard.IPC;
 using MidiBard.Managers;
+using MidiBard.Managers.Ipc;
 using MidiBard.Util;
 
 using MidiBard2.Resources;
@@ -39,7 +40,7 @@ public partial class PluginUI
         var ensembleRunning = MidiBard.AgentMetronome.EnsembleModeRunning;
         var isEnsembleButtonsDisabled = MidiBard.CurrentPlayback == null || MidiBard.CurrentPlayback.IsSoloPlayback
             || PartyChatCommand.IsLoading || ensembleRunning || MidiBard.IsPlaying || PartyChatCommand.EnsembleLoadIssue != null;
-        if (PartyChatCommand.EnsembleLoadIssue is { } issue) ImGui.TextWrapped(issue);
+        if (api.PartyList.IsPartyLeader() && PartyChatCommand.EnsembleLoadIssue is { } issue) ImGui.TextWrapped(issue);
 
         ImGuiUtil.PushIconButtonSize(new Vector2(ImGuiHelpers.GlobalScale * 40, ImGui.GetFrameHeight()));
         // if (!MidiBard.config.playOnMultipleDevices || (MidiBard.config.playOnMultipleDevices && MidiBard.config.usingFileSharingServices))

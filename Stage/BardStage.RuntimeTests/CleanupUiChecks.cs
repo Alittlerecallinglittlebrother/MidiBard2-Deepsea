@@ -31,7 +31,7 @@ internal static unsafe partial class RuntimeUi
         {
             CleanupFrame(window, method); CleanupFrame(window, method);
             if (method == "DrawSetlists") CheckEntryActions();
-            if (method == "DrawAutomaticQueue") { CleanupClick(window, method, 70, 201); CleanupFrame(window, method); }
+            if (method == "DrawAutomaticQueue") { CleanupClickItem(window, method, "queueHistory"); CleanupFrame(window, method); }
             SoftwareRenderer.Save(Path.Combine(output, name + ".png"));
             ImGui.GetIO().FontGlobalScale = 1.4f;
             CleanupFrame(window, method, 760, 540); CleanupFrame(window, method, 760, 540);
@@ -127,7 +127,7 @@ internal static unsafe partial class RuntimeUi
     {
         ImGui.GetIO().DisplaySize = new Vector2(1100, 740);
         ImGui.NewFrame(); ImGui.SetNextWindowPos(Vector2.Zero); ImGui.SetNextWindowSize(new Vector2(1100, 740));
-        ImGui.Begin("midibard2-深海回响特供版 · 记录管理##Cleanup", ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove);
+        ImGui.Begin("midibard2-深海回响改 · 记录管理##Cleanup", ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove);
         if (ImGui.BeginTable("ShowLayout", 2, ImGuiTableFlags.Resizable))
         {
             ImGui.TableSetupColumn("entries", ImGuiTableColumnFlags.WidthStretch, .67f);
@@ -191,7 +191,7 @@ internal static unsafe partial class RuntimeUi
     {
         ImGui.GetIO().DisplaySize = new Vector2(width, height);
         ImGui.NewFrame(); ImGui.SetNextWindowPos(Vector2.Zero); ImGui.SetNextWindowSize(new Vector2(width, height));
-        ImGui.Begin("midibard2-深海回响特供版 · 记录管理##Cleanup", ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove);
+        ImGui.Begin("midibard2-深海回响改 · 记录管理##Cleanup", ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove);
         Invoke(window, method); Invoke(window, "DrawModals");
         ImGui.End(); window.DrawDialogs(); ImGui.Render();
         if (ImGui.GetDrawData().TotalVtxCount == 0) throw new InvalidOperationException("blank cleanup view");

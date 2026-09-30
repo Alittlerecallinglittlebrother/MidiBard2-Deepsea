@@ -18,6 +18,7 @@
 using System;
 using System.Buffers;
 using System.IO;
+using System.Linq;
 
 using Dalamud.Interface.ImGuiNotification;
 
@@ -184,6 +185,7 @@ static class IPCHandles
 
     public static void UpdateMidiFileConfig(MidiFileConfig config, bool updateInstrumentAfterFinished = false)
     {
+        config.ValidatePerformerLimit();
         IPCEnvelope.Create(MessageTypeCode.UpdateMidiFileConfig, config.JsonSerialize()).BroadCast(true);
     }
 
@@ -191,6 +193,7 @@ static class IPCHandles
     private static void HandleUpdateMidiFileConfig(IPCEnvelope message)
     {
         var midiFileConfig = message.StringData[0].JsonDeserialize<MidiFileConfig>();
+        midiFileConfig.ValidatePerformerLimit();
         MidiBard.CurrentPlayback.MidiFileConfig = midiFileConfig;
         MidiBard.CurrentPlayback.SyncTrackStatusWithMidiFileConfig();
     }
@@ -205,12 +208,24 @@ static class IPCHandles
     [IPCHandle(MessageTypeCode.LoadPlaybackIndex)]
     private static void HandleLoadPlayback(IPCEnvelope message)
     {
+        if (!api.ClientState.IsLoggedIn || api.PartyList.Length < 2 || message.PartyId != api.PartyList.PartyId
+            || message.BroadcasterId != (long?)(api.PartyList.GetPartyLeader()?.ContentId)) return;
         if (message.StringData is { Length: > 0 } && message.StringData[0].StartsWith("auto=", StringComparison.Ordinal)
             && !AutomaticEnsembleAssignment.AcceptOrderToken(message.StringData[0], (ulong)message.BroadcasterId)) return;
-        var index = message.DataStruct<int>();
-        PlaylistManager.CurrentContainer.CurrentSongIndex = index;
+        _ = LoadLeaderPlayback(message);
+    }
 
-        PlaylistManager.LoadPlayback(null, false, false);
+    private static async System.Threading.Tasks.Task LoadLeaderPlayback(IPCEnvelope message)
+    {
+        try
+        {
+            using var assignment = AutomaticEnsembleAssignment.BeginLeaderSelection(
+                message.StringData?.FirstOrDefault(), (ulong)message.BroadcasterId);
+            var index = message.DataStruct<int>();
+            if (!await PlaylistManager.LoadPlayback(index, false, false))
+                api.ChatGui.PrintError("[MidiBard] 队长歌曲载入失败，请检查文件后重新选曲");
+        }
+        catch (Exception ex) { api.ChatGui.PrintError("[MidiBard] 接收队长选曲失败：" + ex.Message); }
     }
 
     public static void UpdateInstrument(bool takeout)
@@ -336,10 +351,12 @@ static class IPCHandles
     [IPCHandle(MessageTypeCode.PlaybackSpeed)]
     public static void HandlePlaybackSpeed(IPCEnvelope message)
     {
+        if (MidiBard.CurrentPlayback is { LargePlanId: var largeId } && largeId != Guid.Empty) return;
         var playbackSpeed = message.DataStruct<float>();
         MidiBard.config.PlaySpeed = playbackSpeed;
         if (MidiBard.CurrentPlayback != null)
         {
+            MidiBard.BardPlayDevice.CancelLegacyPlaybackOutput();
             MidiBard.CurrentPlayback.Speed = MidiBard.config.PlaySpeed;
         }
     }

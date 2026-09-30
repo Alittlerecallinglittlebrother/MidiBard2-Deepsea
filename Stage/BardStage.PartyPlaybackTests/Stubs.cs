@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 
 namespace BardStage.Core { public enum QueuePlaybackMode { Solo, Ensemble } }
 namespace BardStage
@@ -16,7 +16,8 @@ namespace Melanchall.DryWetMidi.Multimedia
         internal global::MidiBard.Managers.TrackInfo[] TrackInfos { get; set; } = [new(), new()];
         public bool IsSoloPlayback;
         public void SyncTrackStatusWithMidiFileConfig() { }
-        public uint GetInstrumentId() => 1;
+        public uint GetInstrumentId() => MidiFileConfig.AutomaticallyAssigned || MidiFileConfig.LeaderDistributed
+            ? MidiFileConfig.Tracks.FirstOrDefault(t => t.Enabled && t.AssignedCids.Contains(global::MidiBard.api.Player.ContentId))?.Instrument ?? 0 : 1;
     }
 }
 namespace MidiBard
@@ -30,6 +31,7 @@ namespace MidiBard
         internal static readonly Performance AgentPerformance = new();
         internal static readonly Metronome AgentMetronome = new();
         internal static readonly UiStub Ui = new();
+        internal static readonly OutputStub BardPlayDevice = new();
     }
     internal sealed class Configuration
     {
@@ -41,6 +43,7 @@ namespace MidiBard
     internal sealed class Performance { public bool InPerformanceMode = true; }
     internal sealed class Metronome { public bool EnsembleModeRunning; }
     internal sealed class UiStub { public void OpenMainWindow() { } }
+    internal sealed class OutputStub { public (int PendingEvents, long Revision) PlaybackOutputState; }
     internal static class api
     {
         internal static readonly ClientStateStub ClientState = new();
@@ -65,11 +68,12 @@ namespace MidiBard
         public long PartyId = 1;
         public ulong Leader = 1;
     }
-    internal sealed class LogStub { public void Warning(Exception ex, string message) { } }
+    internal sealed class LogStub { public void Warning(Exception ex, string message) { } public void Information(string message) { } }
     internal sealed class ChatGuiStub { public void PrintError(string message) { } }
 }
 namespace MidiBard.Managers.Ipc
 {
+    internal static class PartyWatcher { internal static ulong[] GetDisplayedMemberCIDs() => global::MidiBard.api.PartyList.Select(p=>p.ContentId).ToArray(); }
     internal static class PartyExtensions
     {
         public static global::MidiBard.Member? GetPartyLeader(this global::MidiBard.PartyListStub list) => list.FirstOrDefault(m => m.ContentId == list.Leader);
@@ -99,15 +103,6 @@ namespace MidiBard.Managers
         public static object LoadLastPlaylist() => new();
     }
     internal sealed record SongStub(string FilePath);
-    internal static class AutomaticEnsembleAssignment
-    {
-        public static bool IsEnabled = true;
-        public static string CaptureOrderToken() => "auto=1,2";
-        public static bool AcceptOrderToken(string token, ulong leader) => leader == api.PartyList.Leader;
-        public static MidiFileConfig Create(object tracks, object config) => new();
-        public static IDisposable BeginSoloLoad() => new Scope();
-        private sealed class Scope : IDisposable { public void Dispose() { } }
-    }
     internal static class MidiFileConfigManager
     {
         public static bool UsingDefaultPerformer;
@@ -116,7 +111,7 @@ namespace MidiBard.Managers
         public static MidiFileConfig GetMidiConfigFromTrack(TrackInfo[] tracks) => new()
         { Tracks = tracks.Select((t, i) => new DbTrack { Index = i, Name = t.TrackName, Instrument = 1 }).ToList() };
     }
-    internal sealed class TrackInfo { public string TrackName = "track"; public int? InitialProgram = 1; }
+    internal sealed class TrackInfo { public string TrackName = "track"; public int? InitialProgram = 1; public int TransposeFromTrackName; }
     internal sealed class MidiFileConfig
     {
         public List<DbTrack> Tracks = [];
@@ -133,10 +128,9 @@ namespace MidiBard.Managers
         public uint Instrument = 1;
         public List<ulong> AssignedCids = [];
     }
-    internal static class AutomaticEnsembleRules
-    { internal static uint ResolveInstrument(string name, uint? saved, int? program) => saved ?? 1; }
     internal static class EnsembleManager
     {
+        public static bool EnsembleRunning;
         public static int ReadyCount;
         public static void BeginEnsembleReadyCheck() { ReadyCount++; }
         public static void StopEnsemble() { }
@@ -170,7 +164,9 @@ namespace MidiBard.Control.MidiControl
             var config = global::MidiBard.Managers.DistributedEnsembleAssignment.Current is { } plan
                 ? global::MidiBard.Managers.DistributedEnsembleAssignment.Create(plan, tracks, path)
                 : global::MidiBard.Managers.DistributedEnsembleAssignment.IsDraft
-                    ? global::MidiBard.Managers.DistributedEnsembleAssignment.CreateDraft(tracks, null) : new global::MidiBard.Managers.MidiFileConfig();
+                    ? global::MidiBard.Managers.DistributedEnsembleAssignment.CreateDraft(tracks, null)
+                    : global::MidiBard.Managers.AutomaticEnsembleAssignment.IsEnabled
+                        ? global::MidiBard.Managers.AutomaticEnsembleAssignment.Create(tracks, null) : new global::MidiBard.Managers.MidiFileConfig();
             MidiBard.CurrentPlayback = new() { FilePath = path, MidiFileConfig = config, TrackInfos = tracks };
             return Task.FromResult(true);
         }
@@ -205,6 +201,12 @@ namespace MidiBard.Util
 }
 namespace MidiBard.StageIntegration
 {
+    internal static class MidiBardLargeEnsembleBackend
+    {
+        public static bool Active => false;
+        public static BardStage.Core.Rooms.LargeMember[] ReadMembers() => [];
+        public static void ReceiveProof(Guid room,string challenge,ulong cid) { }
+    }
     internal static class EnsembleTransport
     {
         public static readonly List<string> Sent = [];
